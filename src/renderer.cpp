@@ -48,6 +48,56 @@ void Renderer::render(const std::vector<Point>& points, const std::vector<Auto>&
     EndDrawing();
 }
 
+void Renderer::render(const std::vector<Point>& points, const std::vector<Auto>& detectedAutos, float tolerance, const PathSystem& pathSystem) {
+    BeginDrawing();
+
+    ClearBackground(backgroundColor);
+
+    // Draw path first
+    drawPath(pathSystem);
+
+    // Draw detected vehicles first (so they appear behind points)
+    for (const Auto& auto_ : detectedAutos) {
+        drawAuto(auto_);
+    }
+
+    // Draw all points
+    for (size_t i = 0; i < points.size(); i++) {
+        bool isSelected = points[i].isDragging;
+        drawPoint(points[i], static_cast<int>(i), isSelected);
+    }
+
+    // Draw UI
+    drawUI(tolerance);
+
+    EndDrawing();
+}
+
+void Renderer::drawPath(const PathSystem& pathSystem) {
+    const std::vector<PathNode>& path = pathSystem.getPath();
+    if (path.size() < 2) return;
+
+    // Draw path lines
+    for (size_t i = 0; i < path.size() - 1; i++) {
+        DrawLineEx(
+            {path[i].position.x, path[i].position.y},
+            {path[i + 1].position.x, path[i + 1].position.y},
+            2.0f,
+            GRAY
+        );
+    }
+
+    // Draw path nodes
+    for (size_t i = 0; i < path.size(); i++) {
+        DrawCircle(
+            static_cast<int>(path[i].position.x),
+            static_cast<int>(path[i].position.y),
+            4,
+            DARKGRAY
+        );
+    }
+}
+
 void Renderer::drawPoint(const Point& point, int index, bool isSelected) {
     Color color = isSelected ? selectedPointColor : pointColor;
 
@@ -112,20 +162,16 @@ void Renderer::drawAuto(const Auto& auto_) {
 }
 
 void Renderer::drawUI(float tolerance) {
-    // Title
-    DrawText("Point Vehicle Detection System", 10, 10, 20, uiColor);
+    // Draw tolerance info
+    char toleranceText[50];
+    snprintf(toleranceText, sizeof(toleranceText), "Tolerance: %.1f", tolerance);
+    DrawText(toleranceText, 10, 10, 20, uiColor);
 
-    // Instructions
-    DrawText("Drag points to move them around", 10, 35, 16, uiColor);
-    DrawText("Use +/- keys to adjust tolerance", 10, 55, 16, uiColor);
-
-    // Tolerance display
-    char toleranceText[64];
-    snprintf(toleranceText, sizeof(toleranceText), "Tolerance: %.1f pixels", tolerance);
-    DrawText(toleranceText, 10, 80, 16, uiColor);
-
-    // Legend
-    DrawText("Blue: Individual Points", 10, 110, 14, uiColor);
-    DrawText("Red: Selected Point", 10, 125, 14, uiColor);
-    DrawText("Green: Detected Vehicle", 10, 140, 14, uiColor);
+    // Draw instructions
+    DrawText("Use +/- to adjust tolerance", 10, 40, 20, uiColor);
+    DrawText("Drag points to move them", 10, 70, 20, uiColor);
+    DrawText("P - Toggle path display", 10, 100, 20, uiColor);
+    DrawText("R - Reset path", 10, 130, 20, uiColor);
+    DrawText("UP/DOWN - Change vehicle speed", 10, 160, 20, uiColor);
+    DrawText("ESC to exit", 10, 190, 20, uiColor);
 }

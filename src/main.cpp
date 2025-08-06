@@ -1,68 +1,111 @@
+
+/*
+ * PDS-T1000 Vehicle Path Following System
+ * 
+ * This program creates 4 fixed vehicles that follow a predefined rectangular path.
+ * 
+ * Controls:
+ * - ESC: Exit program
+ * - P: Toggle path display on/off
+ * - R: Recreate sample path
+ * - UP: Increase all vehicle speeds to 3.0
+ * - DOWN: Decrease all vehicle speeds to 1.0
+ * - SPACE: Start/Stop all vehicles
+ * 
+ * Features:
+ * - 4 vehicles positioned in a square formation
+ * - Each vehicle follows the same rectangular path
+ * - Vehicle positions and directions are updated based on path logic
+ * - No draggable points - vehicles move automatically along the path
+ */
+
 #include "point.h"
 #include "auto.h"
 #include "renderer.h"
+#include "vehicle_controller.h"
 #include <vector>
 #include <algorithm>
 
 class PointManager {
 private:
-    std::vector<Point> points;
-    std::vector<Auto> detectedAutos;
+    std::vector<Auto> vehicles; // Changed from points to vehicles
     Renderer renderer;
+    VehicleController vehicleController;
     float tolerance;
-    int draggedPointIndex;
+    bool pathDisplayEnabled;
 
-    void initializePoints() {
-        // Initialize 8 points in a grid pattern
-        points.clear();
-        points.resize(8);
-
+    void initializeVehicles() {
+        vehicles.clear();
+        
+        // Create 4 vehicles with fixed center points and directions
         float centerX = 960.0f;
         float centerY = 600.0f;
-        float spacing = 150.0f;
-
-        // Arrange points in a 4x2 grid pattern
-        // Alternate between identification and front points
-        for (int i = 0; i < 8; i++) {
-            int row = i / 4;
-            int col = i % 4;
-
-            points[i].x = centerX - (3.0f * spacing / 2.0f) + col * spacing;
-            points[i].y = centerY - spacing / 2.0f + row * spacing;
-            points[i].type = (i % 2 == 0) ? PointType::IDENTIFICATION : PointType::FRONT;
+        float spacing = 200.0f;
+        
+        // Vehicle positions in a square formation
+        std::vector<Point> vehicleCenters = {
+            Point(centerX - spacing, centerY - spacing), // Top-left
+            Point(centerX + spacing, centerY - spacing), // Top-right
+            Point(centerX + spacing, centerY + spacing), // Bottom-right
+            Point(centerX - spacing, centerY + spacing)  // Bottom-left
+        };
+        
+        // Initial directions for each vehicle
+        std::vector<Direction> initialDirections = {
+            Direction::EAST,  // Top-left vehicle faces east
+            Direction::SOUTH, // Top-right vehicle faces south
+            Direction::WEST,  // Bottom-right vehicle faces west
+            Direction::NORTH  // Bottom-left vehicle faces north
+        };
+        
+        // Create vehicles with center points and directions
+        for (int i = 0; i < 4; i++) {
+            Point center = vehicleCenters[i];
+            Direction dir = initialDirections[i];
+            
+            // Calculate front and identification points based on center and direction
+            float offsetDistance = 20.0f; // Distance from center to front/back points
+            Point frontPoint, idPoint;
+            
+            switch (dir) {
+                case Direction::NORTH:
+                    frontPoint = Point(center.x, center.y - offsetDistance);
+                    idPoint = Point(center.x, center.y + offsetDistance);
+                    break;
+                case Direction::EAST:
+                    frontPoint = Point(center.x + offsetDistance, center.y);
+                    idPoint = Point(center.x - offsetDistance, center.y);
+                    break;
+                case Direction::SOUTH:
+                    frontPoint = Point(center.x, center.y + offsetDistance);
+                    idPoint = Point(center.x, center.y - offsetDistance);
+                    break;
+                case Direction::WEST:
+                    frontPoint = Point(center.x - offsetDistance, center.y);
+                    idPoint = Point(center.x + offsetDistance, center.y);
+                    break;
+            }
+            
+            // Create vehicle with calculated points
+            Auto vehicle(idPoint, frontPoint);
+            vehicles.push_back(vehicle);
+            
+            // Register vehicle with controller and set initial position
+            vehicleController.addVehicle(vehicle);
+            vehicleController.setPosition(vehicle.getId(), center, dir);
+            vehicleController.setVehicleSpeed(vehicle.getId(), 2.0f); // Set initial speed
         }
     }
 
-    void updateDragging() {
-        Vector2 mousePos = GetMousePosition();
-        bool mousePressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-        bool mouseDown = IsMouseButtonDown(MOUSE_LEFT_BUTTON);
-        bool mouseReleased = IsMouseButtonReleased(MOUSE_LEFT_BUTTON);
-
-        if (mousePressed) {
-            // Check if mouse is over any point
-            draggedPointIndex = -1;
-            for (size_t i = 0; i < points.size(); i++) {
-                if (points[i].isMouseOver(mousePos.x, mousePos.y, 12.0f)) {
-                    draggedPointIndex = static_cast<int>(i);
-                    points[i].isDragging = true;
-                    break;
-                }
-            }
-        }
-
-        if (mouseDown && draggedPointIndex >= 0) {
-            // Update dragged point position
-            points[draggedPointIndex].x = mousePos.x;
-            points[draggedPointIndex].y = mousePos.y;
-        }
-
-        if (mouseReleased) {
-            // Stop dragging
-            for (auto& point : points) {
-                point.isDragging = false;
-            }
-            draggedPointIndex = -1;
+    void updateVehicles() {
+        // Update all vehicle positions based on path following logic
+        vehicleController.updateAllVehicles(vehicles);
+        
+        // Update vehicle representations based on controller state
+        for (auto& vehicle : vehicles) {
+            // The vehicle controller updates the internal state,
+            // we just need to make sure our vehicle objects reflect the current positions
+            // This is handled by the updateAllVehicles call above
         }
     }
 
@@ -78,46 +121,65 @@ private:
         }
     }
 
-    void detectVehicles() {
-        detectedAutos.clear();
-
-        // Check all pairs of points (identification + front)
-        for (size_t i = 0; i < points.size(); i++) {
-            for (size_t j = i + 1; j < points.size(); j++) {
-                // Only pair identification points with front points
-                if (points[i].type != points[j].type) {
-                    float distance = points[i].distanceTo(points[j]);
-
-                    // If two points are within tolerance, create a vehicle
-                    if (distance <= tolerance) {
-                        // Ensure identification point comes first
-                        if (points[i].type == PointType::IDENTIFICATION) {
-                            detectedAutos.emplace_back(points[i], points[j]);
-                        } else {
-                            detectedAutos.emplace_back(points[j], points[i]);
-                        }
-                    }
+    void updateControls() {
+        if (IsKeyPressed(KEY_P)) {
+            pathDisplayEnabled = !pathDisplayEnabled;
+        }
+        
+        if (IsKeyPressed(KEY_R)) {
+            vehicleController.createSamplePath();
+        }
+        
+        // Speed controls for all vehicles
+        if (IsKeyPressed(KEY_UP)) {
+            for (const auto& vehicle : vehicles) {
+                vehicleController.setVehicleSpeed(vehicle.getId(), 3.0f);
+            }
+        }
+        
+        if (IsKeyPressed(KEY_DOWN)) {
+            for (const auto& vehicle : vehicles) {
+                vehicleController.setVehicleSpeed(vehicle.getId(), 1.0f);
+            }
+        }
+        
+        // Start/Stop movement
+        if (IsKeyPressed(KEY_SPACE)) {
+            for (const auto& vehicle : vehicles) {
+                bool isMoving = vehicleController.isVehicleMoving(vehicle.getId());
+                if (isMoving) {
+                    vehicleController.stopVehicle(vehicle.getId());
+                } else {
+                    vehicleController.startVehicle(vehicle.getId());
                 }
             }
         }
     }
 
 public:
-    PointManager() : renderer(1920, 1200), tolerance(100.0f), draggedPointIndex(-1) {
-        initializePoints();
+    PointManager() : renderer(1920, 1200), tolerance(100.0f), pathDisplayEnabled(true) {
+        initializeVehicles();
+        vehicleController.createSamplePath();
     }
 
     void run() {
         renderer.initialize();
 
         while (!renderer.shouldClose()) {
-            updateDragging();
+            updateVehicles();
             updateTolerance();
-            detectVehicles();
+            updateControls();
+            
+            // Create empty points vector since we don't use draggable points anymore
+            std::vector<Point> emptyPoints;
+            
+            // Render vehicles and path
+            if (pathDisplayEnabled) {
+                renderer.render(emptyPoints, vehicles, tolerance, vehicleController.getPathSystem());
+            } else {
+                renderer.render(emptyPoints, vehicles, tolerance);
+            }
 
-            renderer.render(points, detectedAutos, tolerance);
-
-            // ESC to exit
             if (IsKeyPressed(KEY_ESCAPE)) {
                 break;
             }
