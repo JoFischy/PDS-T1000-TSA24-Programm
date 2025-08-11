@@ -145,23 +145,23 @@ void Simulation::handleInput() {
         spawnRandomVehicle();
     }
 
-    // Vereinfachte Fahrzeug- und Zielknotenauswahl
+    // Fahrzeug- und Zielknotenauswahl mit F1-F4 um Konflikte zu vermeiden
     static int selectedVehicle = -1;
 
-    // Fahrzeug auswählen (1-4)
-    if (IsKeyPressed(KEY_ONE)) {
+    // Fahrzeug auswählen (F1-F4)
+    if (IsKeyPressed(KEY_F1)) {
         selectedVehicle = 0;
         std::cout << "Vehicle 1 selected" << std::endl;
     }
-    if (IsKeyPressed(KEY_TWO)) {
+    if (IsKeyPressed(KEY_F2)) {
         selectedVehicle = 1;
         std::cout << "Vehicle 2 selected" << std::endl;
     }
-    if (IsKeyPressed(KEY_THREE)) {
+    if (IsKeyPressed(KEY_F3)) {
         selectedVehicle = 2;
         std::cout << "Vehicle 3 selected" << std::endl;
     }
-    if (IsKeyPressed(KEY_FOUR)) {
+    if (IsKeyPressed(KEY_F4)) {
         selectedVehicle = 3;
         std::cout << "Vehicle 4 selected" << std::endl;
     }
@@ -171,20 +171,17 @@ void Simulation::handleInput() {
         Vector2 mousePos = GetMousePosition();
         Vector2 worldPos = renderer->screenToWorld(mousePos);
 
-        // Finde nächsten Knoten zum Mausklick
-        int nearestNodeId = pathSystem.findNearestNode(Point(worldPos.x, worldPos.y));
+        // Finde nächsten Knoten zum Mausklick (größerer Radius für bessere Auswahl)
+        int nearestNodeId = pathSystem.findNearestNode(Point(worldPos.x, worldPos.y), 80.0f);
         if (nearestNodeId != -1) {
             const auto& vehicles = vehicleController->getVehicles();
             if (selectedVehicle < vehicles.size()) {
                 int vehicleId = vehicles[selectedVehicle].vehicleId;
                 vehicleController->setVehicleTargetNode(vehicleId, nearestNodeId);
-                std::cout << "=== TARGET ASSIGNMENT ===" << std::endl;
-                std::cout << "Vehicle " << (selectedVehicle + 1) << " (ID: " << vehicleId << ") target set to node " << nearestNodeId << std::endl;
-                std::cout << "Current vehicle position: (" << vehicles[selectedVehicle].position.x << ", " << vehicles[selectedVehicle].position.y << ")" << std::endl;
-                std::cout << "Vehicle current node: " << vehicles[selectedVehicle].currentNodeId << std::endl;
-                std::cout << "Vehicle state: " << (int)vehicles[selectedVehicle].state << std::endl;
-                std::cout << "=========================" << std::endl;
+                std::cout << "Vehicle " << (selectedVehicle + 1) << " target set to node " << nearestNodeId << std::endl;
             }
+        } else {
+            std::cout << "No node found near mouse click. Try clicking closer to a node." << std::endl;
         }
     }
 

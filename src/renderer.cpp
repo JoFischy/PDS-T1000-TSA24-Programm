@@ -4,14 +4,14 @@
 #include <iostream>
 
 // Static color definitions
-const Color Renderer::NODE_COLOR = {100, 150, 255, 255};
-const Color Renderer::SEGMENT_COLOR = {200, 200, 200, 255};
-const Color Renderer::OCCUPIED_SEGMENT_COLOR = {255, 100, 100, 255};
-const Color Renderer::VEHICLE_COLOR = {255, 200, 50, 255};
-const Color Renderer::INTERSECTION_COLOR = {255, 50, 150, 255};
-const Color Renderer::UI_BACKGROUND_COLOR = {30, 30, 30, 200};
+const Color Renderer::NODE_COLOR = {70, 130, 255, 255};
+const Color Renderer::SEGMENT_COLOR = {150, 150, 150, 255};
+const Color Renderer::OCCUPIED_SEGMENT_COLOR = {200, 50, 200, 255}; // Purple for blocked segments
+const Color Renderer::VEHICLE_COLOR = {255, 220, 60, 255};
+const Color Renderer::INTERSECTION_COLOR = {255, 100, 200, 255};
+const Color Renderer::UI_BACKGROUND_COLOR = {20, 20, 20, 220};
 const Color Renderer::UI_TEXT_COLOR = {255, 255, 255, 255};
-const Color Renderer::PICKER_COLOR = {0, 255, 0, 255};
+const Color Renderer::PICKER_COLOR = {0, 255, 100, 255};
 
 Renderer::Renderer() 
     : hasBackgroundImage(false), showNodes(true), showSegments(true), 
@@ -143,24 +143,38 @@ void Renderer::renderDebugInfo(const PathDetector& pathDetector, const PathSyste
 
 void Renderer::renderUI() {
     // Draw UI background
-    DrawRectangle(10, 10, 250, 280, UI_BACKGROUND_COLOR);
+    DrawRectangle(10, 10, 280, 350, UI_BACKGROUND_COLOR);
 
     // Draw text information
     int yOffset = 20;
     DrawText("Factory Vehicle Simulation", 15, yOffset, 16, UI_TEXT_COLOR);
     yOffset += 25;
 
-    DrawText("Controls:", 15, yOffset, 14, UI_TEXT_COLOR);
+    DrawText("Vehicle Selection:", 15, yOffset, 14, YELLOW);
+    yOffset += 20;
+    DrawText("F1,F2,F3,F4 - Select vehicle", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("Click node - Set target", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("R - Random targets for all", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 20;
+
+    DrawText("Camera Controls:", 15, yOffset, 14, UI_TEXT_COLOR);
     yOffset += 20;
     DrawText("WASD - Move camera", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 15;
     DrawText("Mouse wheel - Zoom", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 15;
+    DrawText("R - Reset camera view", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 20;
+
+    DrawText("Other Controls:", 15, yOffset, 14, UI_TEXT_COLOR);
+    yOffset += 20;
     DrawText("Space - Pause/Resume", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 15;
-    DrawText("R - Reset camera", 15, yOffset, 12, UI_TEXT_COLOR);
+    DrawText("V - Spawn new vehicle", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 15;
-    DrawText("P - Toggle coord picker", 15, yOffset, 12, UI_TEXT_COLOR);
+    DrawText("ESC - Exit", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 20;
 
     DrawText("Toggle displays:", 15, yOffset, 14, UI_TEXT_COLOR);
@@ -174,6 +188,22 @@ void Renderer::renderUI() {
     DrawText("4 - Vehicle IDs", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 15;
     DrawText("5 - Debug info", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 20;
+
+    DrawText("Vehicle Colors:", 15, yOffset, 14, YELLOW);
+    yOffset += 20;
+    DrawText("Green - Moving", 15, yOffset, 12, {50, 255, 50, 255});
+    yOffset += 15;
+    DrawText("Orange - Waiting", 15, yOffset, 12, {255, 150, 0, 255});
+    yOffset += 15;
+    DrawText("Blue - Arrived", 15, yOffset, 12, {100, 150, 255, 255});
+    yOffset += 15;
+    DrawText("Gray - Idle", 15, yOffset, 12, {200, 200, 200, 255});
+    yOffset += 15;
+    
+    DrawText("Segments: Gray=free, Purple=blocked", 15, yOffset, 10, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("Routes: Red, Green, Blue, Yellow", 15, yOffset, 10, UI_TEXT_COLOR);
     yOffset += 20;
 
     // Show coordinate picker info
@@ -220,7 +250,7 @@ void Renderer::updateCamera() {
         coordinatePickerEnabled = !coordinatePickerEnabled;
     }
 
-    // Toggle display options
+    // Toggle display options with number keys
     if (IsKeyPressed(KEY_ONE)) showNodes = !showNodes;
     if (IsKeyPressed(KEY_TWO)) showSegments = !showSegments;
     if (IsKeyPressed(KEY_THREE)) showIntersections = !showIntersections;
@@ -271,9 +301,26 @@ Vector2 Renderer::screenToWorld(Vector2 screenPos) const {
 
 void Renderer::renderNode(const PathNode& node) {
     // Make nodes larger and more visible
-    float nodeRadius = 15.0f / camera.zoom;
-    if (nodeRadius < 8.0f) nodeRadius = 8.0f; // Minimum size
+    float nodeRadius = 18.0f / camera.zoom;
+    if (nodeRadius < 12.0f) nodeRadius = 12.0f; // Minimum size
+    
+    // Draw border
+    DrawCircle(node.position.x, node.position.y, nodeRadius + 3, BLACK);
+    // Draw main node
     DrawCircle(node.position.x, node.position.y, nodeRadius, NODE_COLOR);
+    
+    // Draw node ID with proper scaling
+    std::string nodeText = std::to_string(node.nodeId);
+    Point textPos = worldToScreen(node.position);
+    
+    // Scale text size based on zoom level
+    int fontSize = (int)(14 * camera.zoom);
+    if (fontSize < 10) fontSize = 10;
+    if (fontSize > 20) fontSize = 20;
+    
+    // Center text on node
+    int textWidth = MeasureText(nodeText.c_str(), fontSize);
+    DrawText(nodeText.c_str(), textPos.x - textWidth/2, textPos.y - fontSize/2, fontSize, WHITE);
 }
 
 void Renderer::renderSegment(const PathSegment& segment, const PathSystem& pathSystem) {
@@ -283,9 +330,15 @@ void Renderer::renderSegment(const PathSegment& segment, const PathSystem& pathS
     if (!startNode || !endNode) return;
 
     Color segmentColor = segment.isOccupied ? OCCUPIED_SEGMENT_COLOR : SEGMENT_COLOR;
-    float thickness = 6.0f / camera.zoom;
-    if (thickness < 3.0f) thickness = 3.0f; // Minimum thickness
+    float thickness = 8.0f / camera.zoom;
+    if (thickness < 4.0f) thickness = 4.0f; // Minimum thickness
 
+    // Draw segment background (darker)
+    DrawLineEx({startNode->position.x, startNode->position.y},
+               {endNode->position.x, endNode->position.y},
+               thickness + 2, {50, 50, 50, 255});
+    
+    // Draw main segment
     DrawLineEx({startNode->position.x, startNode->position.y},
                {endNode->position.x, endNode->position.y},
                thickness, segmentColor);
@@ -293,38 +346,73 @@ void Renderer::renderSegment(const PathSegment& segment, const PathSystem& pathS
 
 void Renderer::renderVehicle(const Auto& vehicle) {
     float radius = vehicle.size / camera.zoom;
-    if (radius < 8.0f) radius = 8.0f; // Minimum size
+    if (radius < 10.0f) radius = 10.0f; // Minimum size
 
     // Different colors based on vehicle state
     Color vehicleColor = VEHICLE_COLOR;
+    Color borderColor = BLACK;
+    
     switch (vehicle.state) {
-        case VehicleState::MOVING: vehicleColor = GREEN; break;
-        case VehicleState::WAITING: vehicleColor = ORANGE; break;
-        case VehicleState::ARRIVED: vehicleColor = BLUE; break;
-        default: vehicleColor = VEHICLE_COLOR; break;
+        case VehicleState::MOVING: 
+            vehicleColor = {50, 255, 50, 255}; // Bright green
+            borderColor = {0, 200, 0, 255};
+            break;
+        case VehicleState::WAITING: 
+            vehicleColor = {255, 150, 0, 255}; // Orange
+            borderColor = {200, 100, 0, 255};
+            break;
+        case VehicleState::ARRIVED: 
+            vehicleColor = {100, 150, 255, 255}; // Blue
+            borderColor = {50, 100, 200, 255};
+            break;
+        case VehicleState::IDLE:
+            vehicleColor = {200, 200, 200, 255}; // Gray
+            borderColor = {150, 150, 150, 255};
+            break;
+        default: 
+            vehicleColor = VEHICLE_COLOR; 
+            break;
     }
 
+    // Draw border
+    DrawCircle(vehicle.position.x, vehicle.position.y, radius + 2, borderColor);
+    // Draw main vehicle
     DrawCircle(vehicle.position.x, vehicle.position.y, radius, vehicleColor);
 
     // Draw vehicle direction indicator
     if (vehicle.state == VehicleState::MOVING && !vehicle.currentPath.empty()) {
         Point direction = (vehicle.targetPosition - vehicle.position).normalize();
-        Point arrowEnd = vehicle.position + direction * (radius * 1.5f);
+        Point arrowEnd = vehicle.position + direction * (radius * 1.8f);
+
+        float thickness = 3.0f / camera.zoom;
+        if (thickness < 2.0f) thickness = 2.0f;
 
         DrawLineEx(Vector2{vehicle.position.x, vehicle.position.y},
                    Vector2{arrowEnd.x, arrowEnd.y},
-                   2.0f / camera.zoom, RED);
+                   thickness, WHITE); // White arrow for direction
     }
 
-    // Draw vehicle ID (always visible for debugging)
-    std::string idText = std::to_string(vehicle.vehicleId);
+    // Draw vehicle ID with proper scaling
+    std::string idText = std::to_string(vehicle.vehicleId + 1); // Display 1-based numbering
     Point textPos = worldToScreen(vehicle.position);
-    DrawText(idText.c_str(), textPos.x - 10, textPos.y - 20, 16, WHITE);
+    
+    // Scale text size based on zoom level
+    int fontSize = (int)(12 * camera.zoom);
+    if (fontSize < 8) fontSize = 8;
+    if (fontSize > 16) fontSize = 16;
+    
+    int textWidth = MeasureText(idText.c_str(), fontSize);
+    
+    // Background for text
+    DrawRectangle(textPos.x - textWidth/2 - 2, textPos.y - 25, textWidth + 4, fontSize + 4, {0, 0, 0, 180});
+    DrawText(idText.c_str(), textPos.x - textWidth/2, textPos.y - 22, fontSize, WHITE);
 
     // Draw target node ID if assigned
     if (vehicle.targetNodeId != -1) {
-        std::string targetText = "T:" + std::to_string(vehicle.targetNodeId);
-        DrawText(targetText.c_str(), textPos.x - 10, textPos.y + 5, 12, YELLOW);
+        std::string targetText = "→" + std::to_string(vehicle.targetNodeId);
+        int targetWidth = MeasureText(targetText.c_str(), fontSize);
+        DrawRectangle(textPos.x - targetWidth/2 - 2, textPos.y + 8, targetWidth + 4, fontSize + 4, {0, 0, 0, 180});
+        DrawText(targetText.c_str(), textPos.x - targetWidth/2, textPos.y + 10, fontSize, YELLOW);
     }
 }
 
@@ -375,9 +463,19 @@ void Renderer::updateCoordinatePicker() {
 void Renderer::renderVehicleRoute(const Auto& vehicle, const VehicleController& vehicleController, const PathSystem& pathSystem) {
     if (vehicle.currentPath.empty() || vehicle.targetNodeId == -1) return;
 
-    Color routeColor = Color{255, 255, 0, 128}; // Semi-transparent yellow
-    float routeThickness = 4.0f / camera.zoom;
-    if (routeThickness < 2.0f) routeThickness = 2.0f;
+    // Individual colors for each vehicle route
+    Color routeColors[] = {
+        {255, 100, 100, 180}, // Red for Vehicle 1
+        {100, 255, 100, 180}, // Green for Vehicle 2  
+        {100, 100, 255, 180}, // Blue for Vehicle 3
+        {255, 255, 100, 180}, // Yellow for Vehicle 4
+        {255, 100, 255, 180}, // Magenta for Vehicle 5+
+        {100, 255, 255, 180}  // Cyan for Vehicle 6+
+    };
+    
+    Color routeColor = routeColors[vehicle.vehicleId % 6];
+    float routeThickness = 6.0f / camera.zoom;
+    if (routeThickness < 3.0f) routeThickness = 3.0f;
 
     // Draw current planned path
     for (size_t i = vehicle.currentSegmentIndex; i < vehicle.currentPath.size(); i++) {
@@ -400,8 +498,9 @@ void Renderer::renderVehicleRoute(const Auto& vehicle, const VehicleController& 
     if (vehicle.targetNodeId != -1) {
         const PathNode* targetNode = pathSystem.getNode(vehicle.targetNodeId);
         if (targetNode) {
+            DrawCircle(targetNode->position.x, targetNode->position.y, 10.0f, BLACK);
             DrawCircle(targetNode->position.x, targetNode->position.y, 8.0f, YELLOW);
-            DrawCircle(targetNode->position.x, targetNode->position.y, 6.0f, RED);
+            DrawCircle(targetNode->position.x, targetNode->position.y, 6.0f, ORANGE);
         }
     }
 }

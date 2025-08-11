@@ -131,34 +131,41 @@ void SegmentManager::removeVehicle(int vehicleId) {
 }
 
 std::vector<int> SegmentManager::findAvailablePath(int startNodeId, int endNodeId, int vehicleId) const {
-    // Zuerst optimale Route ohne Verkehrsberücksichtigung versuchen
-    std::vector<int> optimalPath = findOptimalPath(startNodeId, endNodeId, vehicleId);
-
-    if (isPathClear(optimalPath, vehicleId)) {
-        return optimalPath;
+    if (startNodeId == endNodeId) {
+        return {};
     }
 
-    // Wenn optimale Route blockiert ist, alternative Routen suchen
-    std::vector<int> alternatives = getAlternativePaths(startNodeId, endNodeId, vehicleId);
-
-    for (const auto& path : {optimalPath}) {
-        if (isPathClear(path, vehicleId)) {
-            return path;
-        }
-    }
-
-    // Wenn keine freie Route verfügbar, beste verfügbare Route mit minimaler Blockierung
+    // Erste Versuche: Pfad ohne blockierte Segmente
     std::vector<int> excludedSegments;
     for (const auto& segment : pathSystem->getSegments()) {
         if (segment.isOccupied && segment.occupiedByVehicleId != vehicleId) {
-            // Nur Segmente mit hoher Staukongestion ausschließen
-            if (getSegmentCongestion(segment.segmentId) > 2) {
-                excludedSegments.push_back(segment.segmentId);
-            }
+            excludedSegments.push_back(segment.segmentId);
         }
     }
 
-    return pathSystem->findPath(startNodeId, endNodeId, excludedSegments);
+    std::vector<int> path = pathSystem->findPath(startNodeId, endNodeId, excludedSegments);
+    
+    if (!path.empty()) {
+        return path;
+    }
+
+    // Zweiter Versuch: Nur schwer blockierte Segmente ausschließen
+    excludedSegments.clear();
+    for (const auto& segment : pathSystem->getSegments()) {
+        if (segment.isOccupied && segment.occupiedByVehicleId != vehicleId && 
+            getSegmentCongestion(segment.segmentId) > 1) {
+            excludedSegments.push_back(segment.segmentId);
+        }
+    }
+
+    path = pathSystem->findPath(startNodeId, endNodeId, excludedSegments);
+    
+    if (!path.empty()) {
+        return path;
+    }
+
+    // Letzter Versuch: Pfad ohne Ausschlüsse (auch wenn blockiert)
+    return pathSystem->findPath(startNodeId, endNodeId, {});
 }
 
 std::vector<int> SegmentManager::findOptimalPath(int startNodeId, int endNodeId, int vehicleId) const {
