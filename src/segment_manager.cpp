@@ -85,6 +85,9 @@ void SegmentManager::processQueue(int segmentId) {
     
     if (reserveSegment(segmentId, nextVehicleId)) {
         std::cout << "Segment " << segmentId << " assigned to queued vehicle " << nextVehicleId << std::endl;
+    } else {
+        // If reservation failed, put vehicle back at front of queue
+        segment->queuedVehicles.insert(segment->queuedVehicles.begin(), nextVehicleId);
     }
 }
 
@@ -167,6 +170,85 @@ std::vector<int> SegmentManager::getOccupiedSegments() const {
     }
     
     return occupied;
+}
+
+float SegmentManager::estimatePathTime(const std::vector<int>& path, int vehicleId) const {
+    if (path.empty()) return 0.0f;
+    
+    float totalTime = 0.0f;
+    const float vehicleSpeed = 100.0f; // Default vehicle speed
+    
+    for (int segmentId : path) {
+        const PathSegment* segment = pathSystem->getSegment(segmentId);
+        if (!segment) continue;
+        
+        const PathNode* startNode = pathSystem->getNode(segment->startNodeId);
+        const PathNode* endNode = pathSystem->getNode(segment->endNodeId);
+        if (!startNode || !endNode) continue;
+        
+        float distance = startNode->position.distanceTo(endNode->position);
+        float segmentTime = distance / vehicleSpeed;
+        
+        // Add waiting time if segment is occupied
+        if (segment->isOccupied && segment->occupiedByVehicleId != vehicleId) {
+            segmentTime += estimateWaitTime(segmentId, vehicleId);
+        }
+        
+        totalTime += segmentTime;
+    }
+    
+    return totalTime;
+}
+
+float SegmentManager::estimateWaitTime(int segmentId, int vehicleId) const {
+    const PathSegment* segment = pathSystem->getSegment(segmentId);
+    if (!segment || !segment->isOccupied) return 0.0f;
+    
+    // Base wait time estimate
+    float baseWaitTime = 3.0f; // 3 seconds base wait
+    
+    // Add time based on queue position
+    auto it = std::find(segment->queuedVehicles.begin(), segment->queuedVehicles.end(), vehicleId);
+    if (it != segment->queuedVehicles.end()) {
+        int queuePosition = std::distance(segment->queuedVehicles.begin(), it);
+        baseWaitTime += queuePosition * 2.0f; // 2 seconds per vehicle ahead in queue
+    }
+    
+    return baseWaitTime;
+}
+
+bool SegmentManager::shouldWaitOrReroute(int currentNodeId, int targetNodeId, int blockedSegmentId, int vehicleId) const {
+    // Calculate wait time for blocked segment
+    float waitTime = estimateWaitTime(blockedSegmentId, vehicleId);
+    
+    // Find alternative path
+    std::vector<int> altPath = findAvailablePath(currentNodeId, targetNodeId, vehicleId);
+    
+    if (altPath.empty()) {
+        // No alternative, must wait
+        return true;
+    }
+    
+    // Calculate time for alternative path
+    float altTime = estimatePathTime(altPath, vehicleId);
+    
+    // Add current segment time to original path
+    const PathSegment* originalSegment = pathSystem->getSegment(blockedSegmentId);
+    float originalTime = waitTime;
+    if (originalSegment) {
+        const PathNode* startNode = pathSystem->getNode(originalSegment->startNodeId);
+        const PathNode* endNode = pathSystem->getNode(originalSegment->endNodeId);
+        if (startNode && endNode) {
+            float distance = startNode->position.distanceTo(endNode->position);
+            originalTime += distance / 100.0f; // Add travel time
+        }
+    }
+    
+    std::cout << "Vehicle " << vehicleId << " decision: Wait time " << waitTime 
+              << "s vs Alternative time " << altTime << "s" << std::endl;
+    
+    // Choose waiting if it's significantly faster (at least 1 second difference)
+    return (originalTime + 1.0f) < altTime;
 }
 
 void SegmentManager::printSegmentStatus() const {

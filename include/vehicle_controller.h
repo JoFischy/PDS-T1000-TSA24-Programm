@@ -31,6 +31,7 @@ public:
     bool isVehicleMoving(int vehicleId) const;
     bool hasVehicleArrived(int vehicleId) const;
     std::vector<int> getVehiclesAtPosition(const Point& position, float radius = 20.0f) const;
+    void coordinateVehicleMovements(); // Coordinate all vehicle movements
     
     // Path management
     bool planPath(int vehicleId, int targetNodeId);
@@ -52,6 +53,7 @@ private:
     Point interpolatePosition(const Point& start, const Point& end, float t) const;
     bool tryReserveNextSegment(Auto& vehicle);
     void releaseCurrentSegment(Auto& vehicle);
+    Point getNodeSafetyStopPosition(int nodeId, int fromSegmentId) const;
     
     PathSystem* pathSystem;
     SegmentManager* segmentManager;

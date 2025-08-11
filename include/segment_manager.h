@@ -28,6 +28,11 @@ public:
     std::vector<int> findOptimalPath(int startNodeId, int endNodeId, int vehicleId) const;
     bool isPathClear(const std::vector<int>& path, int vehicleId) const;
     
+    // Time-based path evaluation
+    float estimatePathTime(const std::vector<int>& path, int vehicleId) const;
+    float estimateWaitTime(int segmentId, int vehicleId) const;
+    bool shouldWaitOrReroute(int currentNodeId, int targetNodeId, int blockedSegmentId, int vehicleId) const;
+    
     // Status and debugging
     std::vector<int> getOccupiedSegments() const;
     void printSegmentStatus() const;
