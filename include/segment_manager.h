@@ -1,43 +1,37 @@
+
 #pragma once
 #include "path_system.h"
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 class SegmentManager {
 public:
     SegmentManager(PathSystem* pathSys);
-
-    // Segment reservation
+    
+    // Segment reservation system
+    bool canVehicleEnterSegment(int segmentId, int vehicleId) const;
     bool reserveSegment(int segmentId, int vehicleId);
     void releaseSegment(int segmentId, int vehicleId);
-    bool isSegmentOccupied(int segmentId) const;
-
+    
     // Queue management
     void addToQueue(int segmentId, int vehicleId);
     void removeFromQueue(int segmentId, int vehicleId);
-    bool isVehicleInQueue(int segmentId, int vehicleId) const;
-    int getNextInQueue(int segmentId) const;
+    void processQueue(int segmentId);
     void updateQueues();
-    int getSegmentOccupant(int segmentId) const;
-    std::vector<int> getVehiclesReadyToMove() const;
-    size_t getQueueLength(int segmentId) const;
-
-
-    // Vehicle tracking
-    void setVehicleSegment(int vehicleId, int segmentId);
+    
+    // Vehicle management
     int getVehicleSegment(int vehicleId) const;
     void removeVehicle(int vehicleId);
-
-    // Advanced path finding with traffic considerations
+    
+    // Path finding with traffic awareness
     std::vector<int> findAvailablePath(int startNodeId, int endNodeId, int vehicleId) const;
     std::vector<int> findOptimalPath(int startNodeId, int endNodeId, int vehicleId) const;
-    bool canVehicleEnterSegment(int segmentId, int vehicleId) const;
     bool isPathClear(const std::vector<int>& path, int vehicleId) const;
-
-    // Traffic analysis
-    int getSegmentCongestion(int segmentId) const;
-    std::vector<int> getAlternativePaths(int startNodeId, int endNodeId, int vehicleId) const;
-
+    
+    // Status and debugging
+    std::vector<int> getOccupiedSegments() const;
+    void printSegmentStatus() const;
+    
 private:
     PathSystem* pathSystem;
     std::unordered_map<int, int> vehicleSegmentMap; // vehicleId -> segmentId

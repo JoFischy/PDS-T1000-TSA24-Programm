@@ -48,6 +48,7 @@ public:
 private:
     void updateVehicleMovement(Auto& vehicle, float deltaTime);
     void moveVehicleAlongPath(Auto& vehicle, float deltaTime);
+    bool checkCollisionRisk(const Auto& vehicle, int segmentId);
     Point interpolatePosition(const Point& start, const Point& end, float t) const;
     bool tryReserveNextSegment(Auto& vehicle);
     void releaseCurrentSegment(Auto& vehicle);

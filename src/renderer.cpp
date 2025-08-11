@@ -200,7 +200,7 @@ void Renderer::renderUI() {
     yOffset += 15;
     DrawText("Gray - Idle", 15, yOffset, 12, {200, 200, 200, 255});
     yOffset += 15;
-    
+
     DrawText("Segments: Gray=free, Purple=blocked", 15, yOffset, 10, UI_TEXT_COLOR);
     yOffset += 15;
     DrawText("Routes: Red, Green, Blue, Yellow", 15, yOffset, 10, UI_TEXT_COLOR);
@@ -303,21 +303,21 @@ void Renderer::renderNode(const PathNode& node) {
     // Make nodes larger and more visible
     float nodeRadius = 18.0f / camera.zoom;
     if (nodeRadius < 12.0f) nodeRadius = 12.0f; // Minimum size
-    
+
     // Draw border
     DrawCircle(node.position.x, node.position.y, nodeRadius + 3, BLACK);
     // Draw main node
     DrawCircle(node.position.x, node.position.y, nodeRadius, NODE_COLOR);
-    
+
     // Draw node ID with proper scaling
     std::string nodeText = std::to_string(node.nodeId);
     Point textPos = worldToScreen(node.position);
-    
+
     // Scale text size based on zoom level
     int fontSize = (int)(14 * camera.zoom);
     if (fontSize < 10) fontSize = 10;
     if (fontSize > 20) fontSize = 20;
-    
+
     // Center text on node
     int textWidth = MeasureText(nodeText.c_str(), fontSize);
     DrawText(nodeText.c_str(), textPos.x - textWidth/2, textPos.y - fontSize/2, fontSize, WHITE);
@@ -337,7 +337,7 @@ void Renderer::renderSegment(const PathSegment& segment, const PathSystem& pathS
     DrawLineEx({startNode->position.x, startNode->position.y},
                {endNode->position.x, endNode->position.y},
                thickness + 2, {50, 50, 50, 255});
-    
+
     // Draw main segment
     DrawLineEx({startNode->position.x, startNode->position.y},
                {endNode->position.x, endNode->position.y},
@@ -345,76 +345,57 @@ void Renderer::renderSegment(const PathSegment& segment, const PathSystem& pathS
 }
 
 void Renderer::renderVehicle(const Auto& vehicle) {
-    float radius = vehicle.size / camera.zoom;
-    if (radius < 10.0f) radius = 10.0f; // Minimum size
-
-    // Different colors based on vehicle state
-    Color vehicleColor = VEHICLE_COLOR;
-    Color borderColor = BLACK;
-    
+    // Determine color based on state
+    Color vehicleColor;
     switch (vehicle.state) {
-        case VehicleState::MOVING: 
-            vehicleColor = {50, 255, 50, 255}; // Bright green
-            borderColor = {0, 200, 0, 255};
-            break;
-        case VehicleState::WAITING: 
-            vehicleColor = {255, 150, 0, 255}; // Orange
-            borderColor = {200, 100, 0, 255};
-            break;
-        case VehicleState::ARRIVED: 
-            vehicleColor = {100, 150, 255, 255}; // Blue
-            borderColor = {50, 100, 200, 255};
-            break;
         case VehicleState::IDLE:
-            vehicleColor = {200, 200, 200, 255}; // Gray
-            borderColor = {150, 150, 150, 255};
+            vehicleColor = YELLOW;
             break;
-        default: 
-            vehicleColor = VEHICLE_COLOR; 
+        case VehicleState::MOVING:
+            vehicleColor = GREEN;
+            break;
+        case VehicleState::WAITING:
+            if (vehicle.isWaitingAtSafetyStop) {
+                vehicleColor = ORANGE; // Safety stop
+            } else {
+                vehicleColor = RED; // Blocked
+            }
+            break;
+        case VehicleState::ARRIVED:
+            vehicleColor = BLUE;
+            break;
+        default:
+            vehicleColor = GRAY;
             break;
     }
 
-    // Draw border
-    DrawCircle(vehicle.position.x, vehicle.position.y, radius + 2, borderColor);
-    // Draw main vehicle
-    DrawCircle(vehicle.position.x, vehicle.position.y, radius, vehicleColor);
+    float vehicleSize = 12.0f / camera.zoom;
+    if (vehicleSize < 8.0f) vehicleSize = 8.0f;
+    if (vehicleSize > 20.0f) vehicleSize = 20.0f;
 
-    // Draw vehicle direction indicator
-    if (vehicle.state == VehicleState::MOVING && !vehicle.currentPath.empty()) {
-        Point direction = (vehicle.targetPosition - vehicle.position).normalize();
-        Point arrowEnd = vehicle.position + direction * (radius * 1.8f);
+    Vector2 pos = {vehicle.position.x, vehicle.position.y};
+    DrawCircleV(pos, vehicleSize, vehicleColor);
 
-        float thickness = 3.0f / camera.zoom;
-        if (thickness < 2.0f) thickness = 2.0f;
+    // Draw outline
+    DrawCircleLinesV(pos, vehicleSize, BLACK);
 
-        DrawLineEx(Vector2{vehicle.position.x, vehicle.position.y},
-                   Vector2{arrowEnd.x, arrowEnd.y},
-                   thickness, WHITE); // White arrow for direction
-    }
+    // Draw vehicle ID number
+    float textSize = 12.0f / camera.zoom;
+    if (textSize < 8.0f) textSize = 8.0f;
+    if (textSize > 16.0f) textSize = 16.0f;
 
-    // Draw vehicle ID with proper scaling
-    std::string idText = std::to_string(vehicle.vehicleId + 1); // Display 1-based numbering
-    Point textPos = worldToScreen(vehicle.position);
-    
-    // Scale text size based on zoom level
-    int fontSize = (int)(12 * camera.zoom);
-    if (fontSize < 8) fontSize = 8;
-    if (fontSize > 16) fontSize = 16;
-    
-    int textWidth = MeasureText(idText.c_str(), fontSize);
-    
-    // Background for text
-    DrawRectangle(textPos.x - textWidth/2 - 2, textPos.y - 25, textWidth + 4, fontSize + 4, {0, 0, 0, 180});
-    DrawText(idText.c_str(), textPos.x - textWidth/2, textPos.y - 22, fontSize, WHITE);
+    std::string idText = std::to_string(vehicle.vehicleId + 1); // 1-based numbering
+    Vector2 textPos = {pos.x - textSize/4, pos.y - textSize/2};
+    DrawTextEx(GetFontDefault(), idText.c_str(), textPos, textSize, 1, WHITE);
 
-    // Draw target node ID if assigned
-    if (vehicle.targetNodeId != -1) {
-        std::string targetText = "→" + std::to_string(vehicle.targetNodeId);
-        int targetWidth = MeasureText(targetText.c_str(), fontSize);
-        DrawRectangle(textPos.x - targetWidth/2 - 2, textPos.y + 8, targetWidth + 4, fontSize + 4, {0, 0, 0, 180});
-        DrawText(targetText.c_str(), textPos.x - targetWidth/2, textPos.y + 10, fontSize, YELLOW);
+    // Draw safety stop indicator if waiting at safety stop
+    if (vehicle.isWaitingAtSafetyStop) {
+        float indicatorSize = vehicleSize * 1.5f;
+        DrawCircleLinesV(pos, indicatorSize, ORANGE);
+        DrawCircleLinesV(pos, indicatorSize + 2, RED);
     }
 }
+
 
 void Renderer::renderIntersection(const Point& intersection) {
     DrawCircle(intersection.x, intersection.y, 12.0f / camera.zoom, INTERSECTION_COLOR);
@@ -472,7 +453,7 @@ void Renderer::renderVehicleRoute(const Auto& vehicle, const VehicleController& 
         {255, 100, 255, 180}, // Magenta for Vehicle 5+
         {100, 255, 255, 180}  // Cyan for Vehicle 6+
     };
-    
+
     Color routeColor = routeColors[vehicle.vehicleId % 6];
     float routeThickness = 6.0f / camera.zoom;
     if (routeThickness < 3.0f) routeThickness = 3.0f;
