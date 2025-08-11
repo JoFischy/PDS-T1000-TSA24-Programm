@@ -17,25 +17,68 @@ bool SegmentManager::reserveSegment(int segmentId, int vehicleId) {
     PathSegment* segment = pathSystem->getSegment(segmentId);
     if (!segment) return false;
     
-    // If already occupied by this vehicle, that's fine
-    if (segment->isOccupied && segment->occupiedByVehicleId == vehicleId) {
-        return true;
+    // Check if this segment involves curve points
+    std::vector<int> segmentsToReserve;
+    segmentsToReserve.push_back(segmentId);
+    
+    // Check if start node is a curve point
+    if (isCurvePoint(segment->startNodeId)) {
+        auto curveSegments = getCombinedCurveSegments(segment->startNodeId);
+        for (int curveSegId : curveSegments) {
+            if (curveSegId != segmentId && 
+                std::find(segmentsToReserve.begin(), segmentsToReserve.end(), curveSegId) == segmentsToReserve.end()) {
+                segmentsToReserve.push_back(curveSegId);
+            }
+        }
     }
     
-    // If occupied by another vehicle, cannot reserve
-    if (segment->isOccupied && segment->occupiedByVehicleId != vehicleId) {
-        std::cout << "Segment " << segmentId << " is occupied by vehicle " 
-                  << segment->occupiedByVehicleId << ", vehicle " << vehicleId << " must wait" << std::endl;
-        return false;
+    // Check if end node is a curve point
+    if (isCurvePoint(segment->endNodeId)) {
+        auto curveSegments = getCombinedCurveSegments(segment->endNodeId);
+        for (int curveSegId : curveSegments) {
+            if (curveSegId != segmentId && 
+                std::find(segmentsToReserve.begin(), segmentsToReserve.end(), curveSegId) == segmentsToReserve.end()) {
+                segmentsToReserve.push_back(curveSegId);
+            }
+        }
     }
     
-    // Segment is free, reserve it
-    segment->isOccupied = true;
-    segment->occupiedByVehicleId = vehicleId;
-    vehicleSegmentMap[vehicleId] = segmentId;
+    // Check if all segments can be reserved
+    for (int segId : segmentsToReserve) {
+        PathSegment* seg = pathSystem->getSegment(segId);
+        if (!seg) return false;
+        
+        // If occupied by another vehicle, cannot reserve
+        if (seg->isOccupied && seg->occupiedByVehicleId != vehicleId) {
+            std::cout << "Segment " << segId << " (part of curve) is occupied by vehicle " 
+                      << seg->occupiedByVehicleId << ", vehicle " << vehicleId << " must wait" << std::endl;
+            return false;
+        }
+    }
     
-    std::cout << "Vehicle " << vehicleId << " reserved segment " << segmentId << std::endl;
-    return true;
+    // Reserve all segments
+    bool success = true;
+    for (int segId : segmentsToReserve) {
+        PathSegment* seg = pathSystem->getSegment(segId);
+        if (seg && (!seg->isOccupied || seg->occupiedByVehicleId == vehicleId)) {
+            seg->isOccupied = true;
+            seg->occupiedByVehicleId = vehicleId;
+            vehicleToSegment[vehicleId] = segId; // Store main segment
+            
+            if (segId == segmentId) {
+                std::cout << "Vehicle " << vehicleId << " reserved segment " << segmentId;
+                if (segmentsToReserve.size() > 1) {
+                    std::cout << " (including curve segments)";
+                }
+                std::cout << std::endl;
+            }
+        } else {
+            success = false;
+            break;
+        }
+    }
+    
+    return success;
 }
 
 void SegmentManager::releaseSegment(int segmentId, int vehicleId) {
@@ -44,14 +87,54 @@ void SegmentManager::releaseSegment(int segmentId, int vehicleId) {
     
     // Only release if this vehicle actually occupies it
     if (segment->isOccupied && segment->occupiedByVehicleId == vehicleId) {
-        segment->isOccupied = false;
-        segment->occupiedByVehicleId = -1;
-        vehicleSegmentMap.erase(vehicleId);
+        // Find all segments that should be released together (curve handling)
+        std::vector<int> segmentsToRelease;
+        segmentsToRelease.push_back(segmentId);
         
-        std::cout << "Vehicle " << vehicleId << " released segment " << segmentId << std::endl;
+        // Check if start node is a curve point
+        if (isCurvePoint(segment->startNodeId)) {
+            auto curveSegments = getCombinedCurveSegments(segment->startNodeId);
+            for (int curveSegId : curveSegments) {
+                PathSegment* curveSeg = pathSystem->getSegment(curveSegId);
+                if (curveSeg && curveSeg->isOccupied && curveSeg->occupiedByVehicleId == vehicleId &&
+                    curveSegId != segmentId) {
+                    segmentsToRelease.push_back(curveSegId);
+                }
+            }
+        }
         
-        // Process any queued vehicles for this segment
-        processQueue(segmentId);
+        // Check if end node is a curve point
+        if (isCurvePoint(segment->endNodeId)) {
+            auto curveSegments = getCombinedCurveSegments(segment->endNodeId);
+            for (int curveSegId : curveSegments) {
+                PathSegment* curveSeg = pathSystem->getSegment(curveSegId);
+                if (curveSeg && curveSeg->isOccupied && curveSeg->occupiedByVehicleId == vehicleId &&
+                    curveSegId != segmentId &&
+                    std::find(segmentsToRelease.begin(), segmentsToRelease.end(), curveSegId) == segmentsToRelease.end()) {
+                    segmentsToRelease.push_back(curveSegId);
+                }
+            }
+        }
+        
+        // Release all segments
+        for (int segId : segmentsToRelease) {
+            PathSegment* seg = pathSystem->getSegment(segId);
+            if (seg && seg->isOccupied && seg->occupiedByVehicleId == vehicleId) {
+                seg->isOccupied = false;
+                seg->occupiedByVehicleId = -1;
+                
+                // Process any queued vehicles for this segment
+                processQueue(segId);
+            }
+        }
+        
+        vehicleToSegment.erase(vehicleId);
+        
+        std::cout << "Vehicle " << vehicleId << " released segment " << segmentId;
+        if (segmentsToRelease.size() > 1) {
+            std::cout << " (including curve segments)";
+        }
+        std::cout << std::endl;
     }
 }
 
@@ -101,8 +184,8 @@ void SegmentManager::updateQueues() {
 }
 
 int SegmentManager::getVehicleSegment(int vehicleId) const {
-    auto it = vehicleSegmentMap.find(vehicleId);
-    return (it != vehicleSegmentMap.end()) ? it->second : -1;
+    auto it = vehicleToSegment.find(vehicleId);
+    return (it != vehicleToSegment.end()) ? it->second : -1;
 }
 
 void SegmentManager::removeVehicle(int vehicleId) {
@@ -117,7 +200,7 @@ void SegmentManager::removeVehicle(int vehicleId) {
         removeFromQueue(segment.segmentId, vehicleId);
     }
 
-    vehicleSegmentMap.erase(vehicleId);
+    vehicleToSegment.erase(vehicleId);
 }
 
 std::vector<int> SegmentManager::findAvailablePath(int startNodeId, int endNodeId, int vehicleId) const {
@@ -218,6 +301,22 @@ float SegmentManager::estimateWaitTime(int segmentId, int vehicleId) const {
 }
 
 bool SegmentManager::shouldWaitOrReroute(int currentNodeId, int targetNodeId, int blockedSegmentId, int vehicleId) const {
+    // Check if this is a T-junction deadlock situation
+    if (isTJunction(currentNodeId)) {
+        const PathSegment* blockedSegment = pathSystem->getSegment(blockedSegmentId);
+        if (blockedSegment && blockedSegment->isOccupied) {
+            int otherVehicleId = blockedSegment->occupiedByVehicleId;
+            
+            if (isDeadlockSituation(currentNodeId, vehicleId, otherVehicleId)) {
+                // Try evasion route first
+                if (canUseEvasionRoute(currentNodeId, targetNodeId, blockedSegmentId, vehicleId)) {
+                    std::cout << "Vehicle " << vehicleId << " using T-junction evasion route" << std::endl;
+                    return false; // Use evasion route instead of waiting
+                }
+            }
+        }
+    }
+    
     // Calculate wait time for blocked segment
     float waitTime = estimateWaitTime(blockedSegmentId, vehicleId);
     
@@ -272,4 +371,145 @@ void SegmentManager::printSegmentStatus() const {
         std::cout << std::endl;
     }
     std::cout << "===================" << std::endl;
+}
+
+bool SegmentManager::isCurvePoint(int nodeId) const {
+    const PathNode* node = pathSystem->getNode(nodeId);
+    if (!node) return false;
+    
+    // Count connected segments
+    int connectionCount = 0;
+    for (const auto& segment : pathSystem->getSegments()) {
+        if (segment.startNodeId == nodeId || segment.endNodeId == nodeId) {
+            connectionCount++;
+        }
+    }
+    
+    // Node with exactly 2 connections is a curve point
+    return connectionCount == 2;
+}
+
+std::vector<int> SegmentManager::getCombinedCurveSegments(int nodeId) const {
+    std::vector<int> curveSegments;
+    
+    if (!isCurvePoint(nodeId)) {
+        return curveSegments;
+    }
+    
+    // Find the two segments connected to this curve point
+    for (const auto& segment : pathSystem->getSegments()) {
+        if (segment.startNodeId == nodeId || segment.endNodeId == nodeId) {
+            curveSegments.push_back(segment.segmentId);
+        }
+    }
+    
+    return curveSegments;
+}
+
+
+
+bool SegmentManager::isTJunction(int nodeId) const {
+    const PathNode* node = pathSystem->getNode(nodeId);
+    if (!node) return false;
+    
+    // T-junction has exactly 3 connected segments
+    return node->connectedSegments.size() == 3;
+}
+
+bool SegmentManager::canUseEvasionRoute(int currentNodeId, int targetNodeId, int blockedSegmentId, int vehicleId) const {
+    if (!isTJunction(currentNodeId)) return false;
+    
+    const PathNode* node = pathSystem->getNode(currentNodeId);
+    if (!node) return false;
+    
+    // Find the third segment (evasion route)
+    int evasionSegmentId = -1;
+    for (int segmentId : node->connectedSegments) {
+        if (segmentId != blockedSegmentId) {
+            const PathSegment* segment = pathSystem->getSegment(segmentId);
+            if (segment && !segment->isOccupied) {
+                evasionSegmentId = segmentId;
+                break;
+            }
+        }
+    }
+    
+    if (evasionSegmentId == -1) return false;
+    
+    // Calculate if evasion route is time-efficient
+    std::vector<int> evasionPath = findEvasionRoute(currentNodeId, targetNodeId, blockedSegmentId, vehicleId);
+    if (evasionPath.empty()) return false;
+    
+    float evasionTime = estimatePathTime(evasionPath, vehicleId);
+    float waitTime = estimateWaitTime(blockedSegmentId, vehicleId);
+    
+    // Use evasion if it's faster or only slightly slower (within 2 seconds)
+    return evasionTime <= (waitTime + 2.0f);
+}
+
+std::vector<int> SegmentManager::findEvasionRoute(int currentNodeId, int targetNodeId, int blockedSegmentId, int vehicleId) const {
+    const PathNode* currentNode = pathSystem->getNode(currentNodeId);
+    if (!currentNode || !isTJunction(currentNodeId)) return {};
+    
+    // Find the third segment for evasion
+    int evasionSegmentId = -1;
+    for (int segmentId : currentNode->connectedSegments) {
+        if (segmentId != blockedSegmentId) {
+            const PathSegment* segment = pathSystem->getSegment(segmentId);
+            if (segment && !segment->isOccupied) {
+                evasionSegmentId = segmentId;
+                break;
+            }
+        }
+    }
+    
+    if (evasionSegmentId == -1) return {};
+    
+    // Get the node at the end of evasion segment
+    const PathSegment* evasionSegment = pathSystem->getSegment(evasionSegmentId);
+    if (!evasionSegment) return {};
+    
+    int evasionNodeId = (evasionSegment->startNodeId == currentNodeId) ? 
+                        evasionSegment->endNodeId : evasionSegment->startNodeId;
+    
+    // Build evasion path: current -> evasion node -> back to current -> target
+    std::vector<int> evasionPath;
+    
+    // Step 1: Go to evasion node
+    evasionPath.push_back(evasionSegmentId);
+    
+    // Step 2: Return to current node (reverse direction)
+    evasionPath.push_back(evasionSegmentId);
+    
+    // Step 3: Continue to target via the originally blocked segment (should be free now)
+    std::vector<int> remainingPath = pathSystem->findPath(currentNodeId, targetNodeId, {});
+    evasionPath.insert(evasionPath.end(), remainingPath.begin(), remainingPath.end());
+    
+    return evasionPath;
+}
+
+bool SegmentManager::isDeadlockSituation(int nodeId, int vehicleId, int otherVehicleId) const {
+    if (!isTJunction(nodeId)) return false;
+    
+    // Get the segments both vehicles want to use
+    int vehicleSegment = getVehicleSegment(vehicleId);
+    int otherSegment = getVehicleSegment(otherVehicleId);
+    
+    if (vehicleSegment == -1 || otherSegment == -1) return false;
+    
+    const PathSegment* vSeg = pathSystem->getSegment(vehicleSegment);
+    const PathSegment* oSeg = pathSystem->getSegment(otherSegment);
+    
+    if (!vSeg || !oSeg) return false;
+    
+    // Check if both vehicles want to go to where the other is coming from
+    bool deadlock = false;
+    
+    // Vehicle 1 wants to go to where Vehicle 2 is coming from
+    if ((vSeg->startNodeId == nodeId && oSeg->endNodeId == nodeId) ||
+        (vSeg->endNodeId == nodeId && oSeg->startNodeId == nodeId)) {
+        deadlock = true;
+    }
+    
+    return deadlock;
 }

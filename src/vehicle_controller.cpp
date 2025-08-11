@@ -51,7 +51,7 @@ void VehicleController::spawnInitialVehicles() {
     for (int i = 0; i < 4 && i * nodeStep < nodes.size(); i++) {
         const PathNode& node = nodes[i * nodeStep];
         addVehicle(node.position);
-        std::cout << "Spawned vehicle " << (i + 1) << " at node " << node.nodeId 
+        std::cout << "Spawned vehicle " << (i + 1) << " at node " << node.nodeId
                   << " (" << node.position.x << ", " << node.position.y << ")" << std::endl;
     }
 
@@ -168,7 +168,7 @@ void VehicleController::setVehicleTargetNode(int vehicleId, int targetNodeId) {
                 // Plan path to intermediate node first
                 if (planPath(vehicleId, intermediateTarget)) {
                     vehicle->state = VehicleState::IDLE;
-                    std::cout << "Vehicle " << vehicleId << " will first go to node " << intermediateTarget 
+                    std::cout << "Vehicle " << vehicleId << " will first go to node " << intermediateTarget
                               << " then to final target " << targetNodeId << std::endl;
                 } else {
                     vehicle->state = VehicleState::WAITING;
@@ -222,7 +222,7 @@ bool VehicleController::isVehicleAtTarget(int vehicleId) const {
     const Auto* vehicle = getVehicle(vehicleId);
     if (!vehicle) return false;
 
-    return vehicle->currentNodeId == vehicle->targetNodeId || 
+    return vehicle->currentNodeId == vehicle->targetNodeId ||
            vehicle->state == VehicleState::ARRIVED;
 }
 
@@ -248,7 +248,7 @@ void VehicleController::coordinateVehicleMovements() {
 
                 // If segment is occupied by another vehicle, try to find alternative
                 const PathSegment* segment = pathSystem->getSegment(nextSegmentId);
-                if (segment && segment->isOccupied && 
+                if (segment && segment->isOccupied &&
                     segment->occupiedByVehicleId != vehicle.vehicleId) {
 
                     // Try to find alternative path
@@ -256,7 +256,7 @@ void VehicleController::coordinateVehicleMovements() {
                         vehicle.currentNodeId, vehicle.targetNodeId, vehicle.vehicleId);
 
                     if (!altPath.empty() && altPath != vehicle.currentPath) {
-                        std::cout << "Vehicle " << vehicle.vehicleId 
+                        std::cout << "Vehicle " << vehicle.vehicleId
                                   << " switching to alternative path" << std::endl;
                         clearPath(vehicle.vehicleId);
                         vehicle.currentPath = altPath;
@@ -355,6 +355,24 @@ bool VehicleController::findAlternativePath(int vehicleId) {
     Auto* vehicle = getVehicle(vehicleId);
     if (!vehicle || vehicle->currentNodeId == -1 || vehicle->targetNodeId == -1) return false;
 
+    // First check for T-junction evasion route
+    if (!vehicle->currentPath.empty() && vehicle->currentSegmentIndex < vehicle->currentPath.size()) {
+        int blockedSegmentId = vehicle->currentPath[vehicle->currentSegmentIndex];
+        
+        if (segmentManager->canUseEvasionRoute(vehicle->currentNodeId, vehicle->targetNodeId, blockedSegmentId, vehicleId)) {
+            std::vector<int> evasionPath = segmentManager->findEvasionRoute(
+                vehicle->currentNodeId, vehicle->targetNodeId, blockedSegmentId, vehicleId);
+            
+            if (!evasionPath.empty()) {
+                vehicle->currentPath = evasionPath;
+                vehicle->currentSegmentIndex = 0;
+                vehicle->state = VehicleState::IDLE;
+                std::cout << "Vehicle " << vehicleId << " using T-junction evasion maneuver" << std::endl;
+                return true;
+            }
+        }
+    }
+
     // Try to find available path
     std::vector<int> path = segmentManager->findAvailablePath(
         vehicle->currentNodeId, vehicle->targetNodeId, vehicleId);
@@ -437,7 +455,6 @@ Point VehicleController::getNodeSafetyStopPosition(int nodeId, int currentSegmen
     const PathNode* node = pathSystem->getNode(nodeId);
     if (!node) return Point(); // Should not happen
 
-    // Find the segment that leads into this node
     const PathSegment* incomingSegment = nullptr;
     const PathSegment* leadingSegment = nullptr;
 
@@ -449,28 +466,29 @@ Point VehicleController::getNodeSafetyStopPosition(int nodeId, int currentSegmen
         }
     }
 
-    if (!incomingSegment) {
-        // If no incoming segment is found, use a default offset from the node
-        return node->position - Point(5.0f, 0.0f); // Example offset
-    }
-
     // Get the other segment connected to the node
     for (const auto& segment : pathSystem->getSegments()) {
-        if (segment.segmentId != incomingSegment->segmentId && 
-            (segment.startNodeId == nodeId || segment.endNodeId == nodeId)) {
+        if (segment.segmentId != currentSegmentId && (segment.startNodeId == nodeId || segment.endNodeId == nodeId)) {
             leadingSegment = &segment;
             break;
         }
     }
 
-    if (leadingSegment) {
-        // Calculate a point slightly before the node on the incoming segment
-        Point segmentDir = (node->position - pathSystem->getNode(incomingSegment->startNodeId)->position).normalize();
-        return node->position - segmentDir * 5.0f; // 5 units before the node
-    } else {
-        // If no leading segment, just use a default offset
-        return node->position - Point(5.0f, 0.0f); // Example offset
-    }
+    if (!incomingSegment) return node->position;
+
+    // Calculate stop position - stop about 48 units before the node (2x vehicle size of 24)
+    const PathNode* startNode = pathSystem->getNode(incomingSegment->startNodeId);
+    if (!startNode) return node->position;
+
+    Point direction = node->position - startNode->position;
+    float length = direction.length();
+    if (length == 0) return node->position;
+
+    direction = direction.normalize();
+
+    // Stop 100 pixels before the node
+    float stopDistance = 100.0f;
+    return node->position - (direction * stopDistance);
 }
 
 void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
@@ -484,7 +502,7 @@ void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
     switch (vehicle.state) {
         case VehicleState::IDLE:
             if (debug) {
-                std::cout << "Vehicle " << vehicle.vehicleId << " IDLE at node " 
+                std::cout << "Vehicle " << vehicle.vehicleId << " IDLE at node "
                          << vehicle.currentNodeId << " target " << vehicle.targetNodeId << std::endl;
             }
 
@@ -546,7 +564,7 @@ void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
 }
 
 void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
-    if (vehicle.currentPath.empty() || 
+    if (vehicle.currentPath.empty() ||
         vehicle.currentSegmentIndex >= vehicle.currentPath.size()) {
 
         // Check if we have a pending target (after reaching intermediate node)
@@ -578,7 +596,7 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
     // Verify that vehicle has reserved this segment
     if (segment->occupiedByVehicleId != vehicle.vehicleId) {
         vehicle.state = VehicleState::WAITING;
-        std::cout << "Vehicle " << vehicle.vehicleId << " cannot move - segment " << currentSegmentId 
+        std::cout << "Vehicle " << vehicle.vehicleId << " cannot move - segment " << currentSegmentId
                   << " not reserved by this vehicle" << std::endl;
         return;
     }
@@ -599,14 +617,21 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
     // Determine target position based on path direction
     Point targetPos;
     int targetNodeId;
+    bool isReverseMovement = false;
+
+    // Check if this is an evasion maneuver (same segment appears twice consecutively)
+    if (vehicle.currentSegmentIndex + 1 < vehicle.currentPath.size() &&
+        vehicle.currentPath[vehicle.currentSegmentIndex] == vehicle.currentPath[vehicle.currentSegmentIndex + 1]) {
+        isReverseMovement = true;
+    }
 
     // Look ahead to next segment to determine direction
     if (vehicle.currentSegmentIndex + 1 < vehicle.currentPath.size()) {
         int nextSegmentId = vehicle.currentPath[vehicle.currentSegmentIndex + 1];
         const PathSegment* nextSegment = pathSystem->getSegment(nextSegmentId);
 
-        if (nextSegment) {
-            // Find shared node between current and next segment
+        if (nextSegment && !isReverseMovement) {
+            // Normal forward movement - find shared node between current and next segment
             int sharedNode = -1;
             if (segment->startNodeId == nextSegment->startNodeId || segment->startNodeId == nextSegment->endNodeId) {
                 sharedNode = segment->startNodeId;
@@ -632,6 +657,30 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
                     targetPos = startNode->position;
                     targetNodeId = startNode->nodeId;
                 }
+            }
+        } else if (isReverseMovement) {
+            // Evasion maneuver - first go away from current node, then return
+            static std::unordered_map<int, bool> vehicleEvasionState;
+            
+            if (vehicleEvasionState[vehicle.vehicleId] == false) {
+                // First part: go away from current node
+                float distToStart = vehicle.position.distanceTo(startNode->position);
+                float distToEnd = vehicle.position.distanceTo(endNode->position);
+                if (distToStart < distToEnd) {
+                    targetPos = endNode->position;
+                    targetNodeId = endNode->nodeId;
+                } else {
+                    targetPos = startNode->position;
+                    targetNodeId = startNode->nodeId;
+                }
+                vehicleEvasionState[vehicle.vehicleId] = true;
+            } else {
+                // Second part: return to original position
+                targetPos = (vehicle.currentNodeId == startNode->nodeId) ? 
+                           endNode->position : startNode->position;
+                targetNodeId = (vehicle.currentNodeId == startNode->nodeId) ? 
+                              endNode->nodeId : startNode->nodeId;
+                vehicleEvasionState[vehicle.vehicleId] = false;
             }
         }
     } else {
@@ -676,7 +725,7 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
                     Point safetyPos = getNodeSafetyStopPosition(targetNodeId, currentSegmentId);
                     float distanceToSafety = vehicle.position.distanceTo(safetyPos);
 
-                    if (distanceToSafety > 3.0f) {
+                    if (distanceToSafety > 8.0f) {
                         // Move towards safety stop position
                         Point safetyDirection = (safetyPos - vehicle.position).normalize();
                         vehicle.position = vehicle.position + safetyDirection * std::min(moveDistance, distanceToSafety);
@@ -732,7 +781,7 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
             } else {
                 // Back to IDLE for next segment
                 vehicle.state = VehicleState::IDLE;
-                std::cout << "Vehicle " << vehicle.vehicleId << " reached node " << targetNodeId 
+                std::cout << "Vehicle " << vehicle.vehicleId << " reached node " << targetNodeId
                           << ", preparing for next segment " << vehicle.currentSegmentIndex << std::endl;
             }
         }
@@ -752,7 +801,7 @@ bool VehicleController::checkCollisionRisk(const Auto& vehicle, int segmentId) {
     int nextSegmentId = vehicle.currentPath[vehicle.currentSegmentIndex + 1];
     const PathSegment* nextSegment = pathSystem->getSegment(nextSegmentId);
 
-    if (nextSegment && nextSegment->isOccupied && 
+    if (nextSegment && nextSegment->isOccupied &&
         nextSegment->occupiedByVehicleId != vehicle.vehicleId) {
         return true; // Next segment occupied
     }
@@ -762,7 +811,7 @@ bool VehicleController::checkCollisionRisk(const Auto& vehicle, int segmentId) {
         int nextNextSegmentId = vehicle.currentPath[vehicle.currentSegmentIndex + 2];
         const PathSegment* nextNextSegment = pathSystem->getSegment(nextNextSegmentId);
 
-        if (nextNextSegment && nextNextSegment->isOccupied && 
+        if (nextNextSegment && nextNextSegment->isOccupied &&
             nextNextSegment->occupiedByVehicleId != vehicle.vehicleId) {
             return true; // Segment after next occupied
         }
@@ -777,7 +826,7 @@ Point VehicleController::interpolatePosition(const Point& start, const Point& en
 }
 
 bool VehicleController::tryReserveNextSegment(Auto& vehicle) {
-    if (vehicle.currentPath.empty() || 
+    if (vehicle.currentPath.empty() ||
         vehicle.currentSegmentIndex >= vehicle.currentPath.size()) {
         return false;
     }

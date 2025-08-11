@@ -101,4 +101,9 @@ private:
     static const Color UI_BACKGROUND_COLOR;
     static const Color UI_TEXT_COLOR;
     static const Color PICKER_COLOR;
+    
+    // Vehicle color system
+    static const Color VEHICLE_COLORS[];
+    static const Color WAITING_COLORS[];
+    static const int NUM_VEHICLE_COLORS;
 };

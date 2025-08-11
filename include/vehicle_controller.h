@@ -53,7 +53,7 @@ private:
     Point interpolatePosition(const Point& start, const Point& end, float t) const;
     bool tryReserveNextSegment(Auto& vehicle);
     void releaseCurrentSegment(Auto& vehicle);
-    Point getNodeSafetyStopPosition(int nodeId, int fromSegmentId) const;
+    Point getNodeSafetyStopPosition(int nodeId, int currentSegmentId) const;
     
     PathSystem* pathSystem;
     SegmentManager* segmentManager;

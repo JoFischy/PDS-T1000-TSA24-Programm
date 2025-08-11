@@ -209,21 +209,37 @@ void Simulation::handleInput() {
                 vehicleController->setVehicleTargetNode(vehicleId, 11);
                 std::cout << "Vehicle " << (selectedVehicle + 1) << " target set to node 11" << std::endl;
             }
-            if (IsKeyPressed(KEY_W)) {
+            if (IsKeyPressed(KEY_Y)) {
                 vehicleController->setVehicleTargetNode(vehicleId, 12);
                 std::cout << "Vehicle " << (selectedVehicle + 1) << " target set to node 12" << std::endl;
             }
-            if (IsKeyPressed(KEY_E)) {
+            if (IsKeyPressed(KEY_X)) {
                 vehicleController->setVehicleTargetNode(vehicleId, 13);
                 std::cout << "Vehicle " << (selectedVehicle + 1) << " target set to node 13" << std::endl;
             }
         }
     }
 
+    // Toggle für automatische neue Ziele bei Ankunft
+    static bool autoAssignTargets = false;
+    if (IsKeyPressed(KEY_T)) {
+        autoAssignTargets = !autoAssignTargets;
+        std::cout << "Auto-assign random targets on arrival: " << (autoAssignTargets ? "ON" : "OFF") << std::endl;
+    }
+
     // Alle Fahrzeuge neue zufällige Ziele zuweisen
     if (IsKeyPressed(KEY_R)) {
         vehicleController->assignRandomTargetsToAllVehicles();
         std::cout << "Assigned new random targets to all vehicles" << std::endl;
+    }
+
+    // Check for vehicles that arrived and need new targets
+    if (autoAssignTargets) {
+        for (const auto& vehicle : vehicleController->getVehicles()) {
+            if (vehicle.state == VehicleState::ARRIVED && vehicle.currentNodeId == vehicle.targetNodeId) {
+                vehicleController->assignNewRandomTarget(vehicle.vehicleId);
+            }
+        }
     }
 
     // Speed controls
