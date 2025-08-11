@@ -2,25 +2,32 @@
 
 ## Vehicle Path Following System
 
-This program demonstrates a vehicle path following system with 4 fixed vehicles that automatically follow a rectangular path.
+This program demonstrates a vehicle path following system that automatically detects white paths in a factory layout image and places 4 vehicles to follow the detected path network.
 
 ### Features
 
-- **4 Fixed Vehicles**: Vehicles are positioned in a square formation and move along a predefined path
-- **Automatic Path Following**: Vehicles follow a rectangular path using pathfinding logic
-- **Real-time Controls**: Speed and movement controls for all vehicles
-- **Path Visualization**: Optional display of the movement path
+- **Automatic Path Detection**: Detects white pathways in the factory layout image
+- **4 Fixed Vehicles**: Automatically spawns 4 vehicles at different intersections
+- **Smart Node Placement**: Places path nodes at detected intersections of white stripes
+- **Automatic Path Following**: Vehicles follow paths between detected intersections
+- **Real-time Path Visualization**: Display of detected path network and connections
+- **Dynamic Target Assignment**: Vehicles automatically get new random targets when reaching destinations
 
 ### Controls
 
 | Key | Action |
 |-----|--------|
 | `ESC` | Exit program |
-| `P` | Toggle path display on/off |
-| `R` | Recreate sample path |
-| `↑` | Increase all vehicle speeds to 3.0 |
-| `↓` | Decrease all vehicle speeds to 1.0 |
-| `SPACE` | Start/Stop all vehicles |
+| `1` | Toggle path nodes display on/off |
+| `2` | Toggle path segments display on/off |
+| `3` | Toggle intersections display on/off |
+| `4` | Toggle vehicle IDs display on/off |
+| `5` | Toggle debug info display on/off |
+| `SPACE` | Pause/Resume simulation |
+| `V` | Manually spawn additional vehicle |
+| `WASD` | Move camera |
+| `Mouse Wheel` | Zoom in/out |
+| `R` | Reset camera position |
 
 ### Building
 
@@ -36,15 +43,20 @@ g++ -D_USE_MATH_DEFINES -DPLATFORM_DESKTOP -Iinclude -Iexternal/raylib -std=c++1
 
 ### Changes from Previous Version
 
-- **Removed**: Draggable points system
-- **Added**: 4 fixed vehicles with center points and directions
-- **Enhanced**: Automatic movement based on path following logic
-- **Improved**: Vehicle state management with start/stop functionality
+- **Removed**: Manual draggable points system
+- **Added**: Automatic image-based path detection from `factory_layout.png`
+- **Added**: Smart intersection detection at white stripe crossings  
+- **Enhanced**: 4 vehicles automatically placed at different detected intersections
+- **Enhanced**: Dynamic target assignment system
+- **Improved**: Path visualization showing detected nodes and connections
+- **Added**: Camera controls for navigation and zoom
 
 ### Architecture
 
-- `PointManager`: Main application class managing vehicles and rendering
-- `VehicleController`: Handles vehicle movement and path following
-- `PathSystem`: Manages the rectangular path nodes
-- `Auto`: Vehicle representation with position and direction
-- `Renderer`: Graphics rendering with Raylib
+- `Simulation`: Main application class managing the simulation loop
+- `PathDetector`: Analyzes factory layout image to detect white paths and intersections
+- `PathSystem`: Manages the detected path network with nodes and segments
+- `VehicleController`: Handles 4 vehicles, movement, and target assignment
+- `SegmentManager`: Manages traffic flow and collision avoidance
+- `Auto`: Vehicle representation with position, direction, and pathfinding
+- `Renderer`: Graphics rendering with Raylib, including path visualization

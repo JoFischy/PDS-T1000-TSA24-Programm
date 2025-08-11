@@ -1,177 +1,344 @@
 #include "renderer.h"
-#include <cstdio>
-#include <cmath> // For M_PI, cosf, sinf
+#include <string>
+#include <sstream>
+#include <iostream>
 
-Renderer::Renderer(int width, int height)
-    : screenWidth(width), screenHeight(height) {
+// Static color definitions
+const Color Renderer::NODE_COLOR = {100, 150, 255, 255};
+const Color Renderer::SEGMENT_COLOR = {200, 200, 200, 255};
+const Color Renderer::OCCUPIED_SEGMENT_COLOR = {255, 100, 100, 255};
+const Color Renderer::VEHICLE_COLOR = {255, 200, 50, 255};
+const Color Renderer::INTERSECTION_COLOR = {255, 50, 150, 255};
+const Color Renderer::UI_BACKGROUND_COLOR = {30, 30, 30, 200};
+const Color Renderer::UI_TEXT_COLOR = {255, 255, 255, 255};
+const Color Renderer::PICKER_COLOR = {0, 255, 0, 255};
 
-    // Initialize colors
-    backgroundColor = WHITE;
-    pointColor = BLUE;
-    selectedPointColor = RED;
-    autoColor = GREEN;
-    uiColor = BLACK;
+Renderer::Renderer() 
+    : hasBackgroundImage(false), showNodes(true), showSegments(true), 
+      showIntersections(true), showVehicleIds(false), showDebugInfo(false),
+      windowWidth(0), windowHeight(0), isInitialized(false),
+      coordinatePickerEnabled(false), pickerPosition(100, 100), 
+      isDraggingPicker(false), pickerRadius(15.0f) {
+    
+    camera.target = {0, 0};
+    camera.offset = {0, 0};
+    camera.rotation = 0.0f;
+    camera.zoom = 1.0f;
 }
 
-void Renderer::initialize() {
-    InitWindow(screenWidth, screenHeight, "Point Vehicle Detection System");
+Renderer::~Renderer() {
+    cleanup();
+}
+
+bool Renderer::initialize(int windowWidth, int windowHeight, const char* title) {
+    this->windowWidth = windowWidth;
+    this->windowHeight = windowHeight;
+    
+    InitWindow(windowWidth, windowHeight, title);
     SetTargetFPS(60);
+    
+    // Initialize camera
+    camera.target = {0, 0};
+    camera.offset = {windowWidth / 2.0f, windowHeight / 2.0f};
+    camera.rotation = 0.0f;
+    camera.zoom = 1.0f;
+    
+    isInitialized = true;
+    return true;
 }
 
 void Renderer::cleanup() {
-    CloseWindow();
+    if (hasBackgroundImage) {
+        UnloadTexture(backgroundTexture);
+        hasBackgroundImage = false;
+    }
+    
+    if (isInitialized) {
+        CloseWindow();
+        isInitialized = false;
+    }
 }
 
-bool Renderer::shouldClose() {
+bool Renderer::loadBackgroundImage(const char* imagePath) {
+    if (hasBackgroundImage) {
+        UnloadTexture(backgroundTexture);
+    }
+    
+    backgroundTexture = LoadTexture(imagePath);
+    hasBackgroundImage = (backgroundTexture.id != 0);
+    
+    if (hasBackgroundImage) {
+        // Center camera on image
+        camera.target = {backgroundTexture.width / 2.0f, backgroundTexture.height / 2.0f};
+    }
+    
+    return hasBackgroundImage;
+}
+
+void Renderer::beginFrame() {
+    BeginDrawing();
+    ClearBackground(DARKGRAY);
+    BeginMode2D(camera);
+}
+
+void Renderer::endFrame() {
+    // Render coordinate picker in world space
+    if (coordinatePickerEnabled) {
+        renderCoordinatePicker();
+    }
+    
+    EndMode2D();
+    renderUI();
+    EndDrawing();
+}
+
+void Renderer::renderBackground() {
+    if (hasBackgroundImage) {
+        DrawTexture(backgroundTexture, 0, 0, WHITE);
+    }
+}
+
+void Renderer::renderPathSystem(const PathSystem& pathSystem) {
+    // Render segments first (so they appear behind nodes)
+    if (showSegments) {
+        for (const auto& segment : pathSystem.getSegments()) {
+            renderSegment(segment, pathSystem);
+        }
+    }
+    
+    // Render nodes
+    if (showNodes) {
+        for (const auto& node : pathSystem.getNodes()) {
+            renderNode(node);
+        }
+    }
+}
+
+void Renderer::renderVehicles(const VehicleController& vehicleController) {
+    for (const auto& vehicle : vehicleController.getVehicles()) {
+        renderVehicle(vehicle);
+    }
+}
+
+void Renderer::renderDebugInfo(const PathDetector& pathDetector, const PathSystem& pathSystem) {
+    if (!showDebugInfo) return;
+    
+    // Render detected intersections
+    if (showIntersections) {
+        for (const auto& intersection : pathDetector.getIntersections()) {
+            renderIntersection(intersection);
+        }
+    }
+}
+
+void Renderer::renderUI() {
+    // Draw UI background
+    DrawRectangle(10, 10, 250, 280, UI_BACKGROUND_COLOR);
+    
+    // Draw text information
+    int yOffset = 20;
+    DrawText("Factory Vehicle Simulation", 15, yOffset, 16, UI_TEXT_COLOR);
+    yOffset += 25;
+    
+    DrawText("Controls:", 15, yOffset, 14, UI_TEXT_COLOR);
+    yOffset += 20;
+    DrawText("WASD - Move camera", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("Mouse wheel - Zoom", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("Space - Pause/Resume", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("R - Reset camera", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("P - Toggle coord picker", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 20;
+    
+    DrawText("Toggle displays:", 15, yOffset, 14, UI_TEXT_COLOR);
+    yOffset += 20;
+    DrawText("1 - Nodes", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("2 - Segments", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("3 - Intersections", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("4 - Vehicle IDs", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("5 - Debug info", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 20;
+    
+    // Show coordinate picker info
+    if (coordinatePickerEnabled) {
+        DrawText("Coordinate Picker:", 15, yOffset, 14, GREEN);
+        yOffset += 20;
+        std::string coordText = "X: " + std::to_string((int)pickerPosition.x) + 
+                               ", Y: " + std::to_string((int)pickerPosition.y);
+        DrawText(coordText.c_str(), 15, yOffset, 12, GREEN);
+        yOffset += 15;
+        DrawText("Drag green circle to move", 15, yOffset, 10, UI_TEXT_COLOR);
+    }
+}
+
+void Renderer::updateCamera() {
+    // Update coordinate picker first
+    if (coordinatePickerEnabled) {
+        updateCoordinatePicker();
+    }
+    
+    // Camera movement with WASD
+    float cameraSpeed = 200.0f / camera.zoom;
+    
+    if (IsKeyDown(KEY_W)) camera.target.y -= cameraSpeed * GetFrameTime();
+    if (IsKeyDown(KEY_S)) camera.target.y += cameraSpeed * GetFrameTime();
+    if (IsKeyDown(KEY_A)) camera.target.x -= cameraSpeed * GetFrameTime();
+    if (IsKeyDown(KEY_D)) camera.target.x += cameraSpeed * GetFrameTime();
+    
+    // Zoom with mouse wheel
+    float wheel = GetMouseWheelMove();
+    if (wheel != 0) {
+        camera.zoom += wheel * 0.1f * camera.zoom;
+        if (camera.zoom < 0.1f) camera.zoom = 0.1f;
+        if (camera.zoom > 5.0f) camera.zoom = 5.0f;
+    }
+    
+    // Reset camera
+    if (IsKeyPressed(KEY_R)) {
+        resetCamera();
+    }
+    
+    // Toggle coordinate picker
+    if (IsKeyPressed(KEY_P)) {
+        coordinatePickerEnabled = !coordinatePickerEnabled;
+    }
+    
+    // Toggle display options
+    if (IsKeyPressed(KEY_ONE)) showNodes = !showNodes;
+    if (IsKeyPressed(KEY_TWO)) showSegments = !showSegments;
+    if (IsKeyPressed(KEY_THREE)) showIntersections = !showIntersections;
+    if (IsKeyPressed(KEY_FOUR)) showVehicleIds = !showVehicleIds;
+    if (IsKeyPressed(KEY_FIVE)) showDebugInfo = !showDebugInfo;
+}
+
+void Renderer::zoomIn() {
+    camera.zoom *= 1.2f;
+    if (camera.zoom > 5.0f) camera.zoom = 5.0f;
+}
+
+void Renderer::zoomOut() {
+    camera.zoom /= 1.2f;
+    if (camera.zoom < 0.1f) camera.zoom = 0.1f;
+}
+
+void Renderer::resetCamera() {
+    if (hasBackgroundImage) {
+        camera.target = {backgroundTexture.width / 2.0f, backgroundTexture.height / 2.0f};
+    } else {
+        camera.target = {0, 0};
+    }
+    camera.zoom = 1.0f;
+}
+
+Point Renderer::screenToWorld(const Point& screenPos) const {
+    Vector2 worldPos = GetScreenToWorld2D({screenPos.x, screenPos.y}, camera);
+    return Point(worldPos.x, worldPos.y);
+}
+
+Point Renderer::worldToScreen(const Point& worldPos) const {
+    Vector2 screenPos = GetWorldToScreen2D({worldPos.x, worldPos.y}, camera);
+    return Point(screenPos.x, screenPos.y);
+}
+
+bool Renderer::shouldClose() const {
     return WindowShouldClose();
 }
 
-void Renderer::render(const std::vector<Point>& points, const std::vector<Auto>& detectedAutos, float tolerance) {
-    BeginDrawing();
-
-    ClearBackground(backgroundColor);
-
-    // Draw detected vehicles first (so they appear behind points)
-    for (const Auto& auto_ : detectedAutos) {
-        drawAuto(auto_);
-    }
-
-    // Draw all points
-    for (size_t i = 0; i < points.size(); i++) {
-        bool isSelected = points[i].isDragging;
-        drawPoint(points[i], static_cast<int>(i), isSelected);
-    }
-
-    // Draw UI
-    drawUI(tolerance);
-
-    EndDrawing();
+void Renderer::setCameraTarget(float x, float y) {
+    camera.target = {x, y};
 }
 
-void Renderer::render(const std::vector<Point>& points, const std::vector<Auto>& detectedAutos, float tolerance, const PathSystem& pathSystem) {
-    BeginDrawing();
-
-    ClearBackground(backgroundColor);
-
-    // Draw path first
-    drawPath(pathSystem);
-
-    // Draw detected vehicles first (so they appear behind points)
-    for (const Auto& auto_ : detectedAutos) {
-        drawAuto(auto_);
-    }
-
-    // Draw all points
-    for (size_t i = 0; i < points.size(); i++) {
-        bool isSelected = points[i].isDragging;
-        drawPoint(points[i], static_cast<int>(i), isSelected);
-    }
-
-    // Draw UI
-    drawUI(tolerance);
-
-    EndDrawing();
+void Renderer::renderNode(const PathNode& node) {
+    // Make nodes larger and more visible
+    float nodeRadius = 15.0f / camera.zoom;
+    if (nodeRadius < 8.0f) nodeRadius = 8.0f; // Minimum size
+    DrawCircle(node.position.x, node.position.y, nodeRadius, NODE_COLOR);
 }
 
-void Renderer::drawPath(const PathSystem& pathSystem) {
-    const std::vector<PathNode>& path = pathSystem.getPath();
-    if (path.size() < 2) return;
+void Renderer::renderSegment(const PathSegment& segment, const PathSystem& pathSystem) {
+    const PathNode* startNode = pathSystem.getNode(segment.startNodeId);
+    const PathNode* endNode = pathSystem.getNode(segment.endNodeId);
+    
+    if (!startNode || !endNode) return;
+    
+    Color segmentColor = segment.isOccupied ? OCCUPIED_SEGMENT_COLOR : SEGMENT_COLOR;
+    float thickness = 6.0f / camera.zoom;
+    if (thickness < 3.0f) thickness = 3.0f; // Minimum thickness
+    
+    DrawLineEx({startNode->position.x, startNode->position.y},
+               {endNode->position.x, endNode->position.y},
+               thickness, segmentColor);
+}
 
-    // Draw path lines
-    for (size_t i = 0; i < path.size() - 1; i++) {
-        DrawLineEx(
-            {path[i].position.x, path[i].position.y},
-            {path[i + 1].position.x, path[i + 1].position.y},
-            2.0f,
-            GRAY
-        );
+void Renderer::renderVehicle(const Auto& vehicle) {
+    float radius = vehicle.size / camera.zoom;
+    DrawCircle(vehicle.position.x, vehicle.position.y, radius, VEHICLE_COLOR);
+    
+    // Draw vehicle direction indicator
+    if (vehicle.state == VehicleState::MOVING && !vehicle.currentPath.empty()) {
+        Point direction = (vehicle.targetPosition - vehicle.position).normalize();
+        Point arrowEnd = vehicle.position + direction * (radius * 1.5f);
+        
+        DrawLineEx({vehicle.position.x, vehicle.position.y},
+                   {arrowEnd.x, arrowEnd.y},
+                   2.0f / camera.zoom, RED);
     }
-
-    // Draw path nodes
-    for (size_t i = 0; i < path.size(); i++) {
-        DrawCircle(
-            static_cast<int>(path[i].position.x),
-            static_cast<int>(path[i].position.y),
-            4,
-            DARKGRAY
-        );
+    
+    // Draw vehicle ID
+    if (showVehicleIds) {
+        std::string idText = std::to_string(vehicle.vehicleId);
+        Point textPos = worldToScreen(vehicle.position);
+        DrawText(idText.c_str(), textPos.x - 10, textPos.y - 20, 16, WHITE);
     }
 }
 
-void Renderer::drawPoint(const Point& point, int index, bool isSelected) {
-    Color color = isSelected ? selectedPointColor : pointColor;
-
-    // Draw point circle
-    DrawCircle(static_cast<int>(point.x), static_cast<int>(point.y), 8, color);
-    DrawCircleLines(static_cast<int>(point.x), static_cast<int>(point.y), 8, BLACK);
-
-    // Draw point number
-    char text[8];
-    snprintf(text, sizeof(text), "%d", index + 1);
-    DrawText(text, static_cast<int>(point.x + 12), static_cast<int>(point.y - 8), 16, BLACK);
+void Renderer::renderIntersection(const Point& intersection) {
+    DrawCircle(intersection.x, intersection.y, 12.0f / camera.zoom, INTERSECTION_COLOR);
 }
 
-void Renderer::drawAuto(const Auto& auto_) {
-    if (!auto_.isValid()) return;
+void Renderer::renderCoordinatePicker() {
+    // Draw outer circle for better visibility
+    DrawCircleLines(pickerPosition.x, pickerPosition.y, pickerRadius + 3.0f, BLACK);
+    
+    // Draw main picker circle
+    DrawCircle(pickerPosition.x, pickerPosition.y, pickerRadius, PICKER_COLOR);
+    
+    // Draw crosshair for precise positioning
+    float crossSize = pickerRadius * 0.7f;
+    DrawLineEx({pickerPosition.x - crossSize, pickerPosition.y},
+               {pickerPosition.x + crossSize, pickerPosition.y},
+               2.0f, BLACK);
+    DrawLineEx({pickerPosition.x, pickerPosition.y - crossSize},
+               {pickerPosition.x, pickerPosition.y + crossSize},
+               2.0f, BLACK);
+}
 
-    Point idPoint = auto_.getIdentificationPoint();
-    Point frontPoint = auto_.getFrontPoint();
-    Point center = auto_.getCenter();
-
-    // Draw line between the two points
-    DrawLineEx({idPoint.x, idPoint.y}, {frontPoint.x, frontPoint.y}, 4.0f, autoColor);
-
-    // Draw center point
-    DrawCircle(static_cast<int>(center.x), static_cast<int>(center.y), 6, autoColor);
-
-    // Draw direction arrow from identification to front point
-    // Calculate direction vector from idPoint to frontPoint
-    Vector2 directionVector = {frontPoint.x - idPoint.x, frontPoint.y - idPoint.y};
-    // Normalize the direction vector to get a unit vector for direction calculation
-    float length = sqrtf(directionVector.x * directionVector.x + directionVector.y * directionVector.y);
-    if (length > 0) {
-        directionVector.x /= length;
-        directionVector.y /= length;
-    } else {
-        // If points are coincident, use a default direction or skip drawing arrow
-        directionVector = {1.0f, 0.0f}; // Default to right if points are the same
+void Renderer::updateCoordinatePicker() {
+    Vector2 mousePos = GetMousePosition();
+    Point worldMousePos = screenToWorld(Point(mousePos.x, mousePos.y));
+    
+    // Check if mouse is over picker
+    float distance = worldMousePos.distanceTo(pickerPosition);
+    
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (distance <= pickerRadius) {
+            isDraggingPicker = true;
+        }
     }
-
-    float arrowLength = 25.0f;
-    Point arrowEnd;
-    arrowEnd.x = idPoint.x + directionVector.x * arrowLength;
-    arrowEnd.y = idPoint.y + directionVector.y * arrowLength;
-
-    DrawLineEx({idPoint.x, idPoint.y}, {arrowEnd.x, arrowEnd.y}, 3.0f, autoColor);
-
-    // Draw arrowhead
-    float headLength = 8.0f;
-    float headAngle = 30.0f * M_PI / 180.0f;
-
-    // Calculate the angle of the direction vector
-    float dirRad = atan2f(directionVector.y, directionVector.x);
-
-    Point head1, head2;
-    head1.x = arrowEnd.x - cosf(dirRad - headAngle) * headLength;
-    head1.y = arrowEnd.y - sinf(dirRad - headAngle) * headLength;
-    head2.x = arrowEnd.x - cosf(dirRad + headAngle) * headLength;
-    head2.y = arrowEnd.y - sinf(dirRad + headAngle) * headLength;
-
-    DrawLineEx({arrowEnd.x, arrowEnd.y}, {head1.x, head1.y}, 2.0f, autoColor);
-    DrawLineEx({arrowEnd.x, arrowEnd.y}, {head2.x, head2.y}, 2.0f, autoColor);
-}
-
-void Renderer::drawUI(float tolerance) {
-    // Draw tolerance info
-    char toleranceText[50];
-    snprintf(toleranceText, sizeof(toleranceText), "Tolerance: %.1f", tolerance);
-    DrawText(toleranceText, 10, 10, 20, uiColor);
-
-    // Draw instructions
-    DrawText("Use +/- to adjust tolerance", 10, 40, 20, uiColor);
-    DrawText("Drag points to move them", 10, 70, 20, uiColor);
-    DrawText("P - Toggle path display", 10, 100, 20, uiColor);
-    DrawText("R - Reset path", 10, 130, 20, uiColor);
-    DrawText("UP/DOWN - Change vehicle speed", 10, 160, 20, uiColor);
-    DrawText("ESC to exit", 10, 190, 20, uiColor);
+    
+    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+        isDraggingPicker = false;
+    }
+    
+    // Update picker position while dragging
+    if (isDraggingPicker) {
+        pickerPosition = worldMousePos;
+    }
 }

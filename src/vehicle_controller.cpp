@@ -1,187 +1,303 @@
-
 #include "vehicle_controller.h"
-#include <cmath>
+#include <algorithm>
+#include <random>
+#include <iostream>
 
-VehicleController::VehicleController() {
-    createSamplePath();
-}
+VehicleController::VehicleController(PathSystem* pathSys, SegmentManager* segmentMgr)
+    : pathSystem(pathSys), segmentManager(segmentMgr), nextVehicleId(0) {}
 
-Direction VehicleController::calculateDirection(const Point& from, const Point& to) const {
-    float dx = to.x - from.x;
-    float dy = to.y - from.y;
+int VehicleController::addVehicle(const Point& startPosition) {
+    Auto vehicle(nextVehicleId, startPosition);
     
-    // Determine primary direction based on larger component
-    if (std::abs(dx) > std::abs(dy)) {
-        return dx > 0 ? Direction::EAST : Direction::WEST;
-    } else {
-        return dy > 0 ? Direction::SOUTH : Direction::NORTH;
-    }
-}
-
-Point VehicleController::moveTowardsTarget(const Point& current, const Point& target, float speed) const {
-    float dx = target.x - current.x;
-    float dy = target.y - current.y;
-    float distance = std::sqrt(dx * dx + dy * dy);
-    
-    if (distance <= speed) {
-        return target; // Reached target
+    // Find nearest node as starting position
+    int nearestNodeId = pathSystem->findNearestNode(startPosition);
+    if (nearestNodeId != -1) {
+        vehicle.currentNodeId = nearestNodeId;
+        const PathNode* node = pathSystem->getNode(nearestNodeId);
+        if (node) {
+            vehicle.position = node->position;
+        }
     }
     
-    // Normalize and apply speed
-    float ratio = speed / distance;
-    Point newPos;
-    newPos.x = current.x + dx * ratio;
-    newPos.y = current.y + dy * ratio;
-    return newPos;
+    vehicles.push_back(vehicle);
+    vehicleIdToIndex[nextVehicleId] = vehicles.size() - 1;
+    
+    return nextVehicleId++;
 }
 
-void VehicleController::moveForward(int vehicleId, float distance) {
-    auto it = vehicleStates.find(vehicleId);
-    if (it == vehicleStates.end()) return;
+void VehicleController::spawnInitialVehicles() {
+    if (!pathSystem || pathSystem->getNodeCount() < 4) {
+        std::cerr << "Not enough nodes to spawn 4 vehicles" << std::endl;
+        return;
+    }
     
-    VehicleState& state = it->second;
-    float radians = static_cast<float>(state.currentDirection) * M_PI / 180.0f;
+    const auto& nodes = pathSystem->getNodes();
     
-    state.currentPosition.x += std::cos(radians) * distance;
-    state.currentPosition.y += std::sin(radians) * distance;
+    // Clear existing vehicles
+    vehicles.clear();
+    vehicleIdToIndex.clear();
+    nextVehicleId = 0;
+    
+    // Spawn 4 vehicles at different nodes
+    int nodeStep = std::max(1, static_cast<int>(nodes.size()) / 4);
+    
+    for (int i = 0; i < 4 && i * nodeStep < nodes.size(); i++) {
+        const PathNode& node = nodes[i * nodeStep];
+        addVehicle(node.position);
+        std::cout << "Spawned vehicle " << (i + 1) << " at node " << node.nodeId 
+                  << " (" << node.position.x << ", " << node.position.y << ")" << std::endl;
+    }
+    
+    std::cout << "Spawned " << vehicles.size() << " initial vehicles" << std::endl;
+    
+    // Assign random targets to all vehicles
+    assignRandomTargetsToAllVehicles();
 }
 
-void VehicleController::turnLeft(int vehicleId) {
-    auto it = vehicleStates.find(vehicleId);
-    if (it == vehicleStates.end()) return;
+void VehicleController::assignRandomTargetsToAllVehicles() {
+    if (!pathSystem || pathSystem->getNodeCount() < 2) return;
     
-    VehicleState& state = it->second;
-    int newDir = (static_cast<int>(state.currentDirection) - 90 + 360) % 360;
-    state.currentDirection = static_cast<Direction>(newDir);
-}
-
-void VehicleController::turnRight(int vehicleId) {
-    auto it = vehicleStates.find(vehicleId);
-    if (it == vehicleStates.end()) return;
+    const auto& nodes = pathSystem->getNodes();
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> nodeDist(0, nodes.size() - 1);
     
-    VehicleState& state = it->second;
-    int newDir = (static_cast<int>(state.currentDirection) + 90) % 360;
-    state.currentDirection = static_cast<Direction>(newDir);
-}
-
-void VehicleController::setPosition(int vehicleId, const Point& position, Direction direction) {
-    vehicleStates[vehicleId].currentPosition = position;
-    vehicleStates[vehicleId].currentDirection = direction;
-}
-
-void VehicleController::addVehicle(const Auto& vehicle) {
-    if (!vehicle.isValid()) return;
-    
-    VehicleState state;
-    state.currentPosition = vehicle.getCenter();
-    state.currentDirection = Direction::NORTH; // Default direction
-    state.currentPathIndex = 0;
-    state.isMoving = true;
-    
-    vehicleStates[vehicle.getId()] = state;
+    for (auto& vehicle : vehicles) {
+        // Find a different target node than current one
+        int targetNodeId;
+        do {
+            int randomIndex = nodeDist(gen);
+            targetNodeId = nodes[randomIndex].nodeId;
+        } while (targetNodeId == vehicle.currentNodeId && nodes.size() > 1);
+        
+        setVehicleTarget(vehicle.vehicleId, targetNodeId);
+        std::cout << "Vehicle " << vehicle.vehicleId << " assigned target node " << targetNodeId << std::endl;
+    }
 }
 
 void VehicleController::removeVehicle(int vehicleId) {
-    vehicleStates.erase(vehicleId);
+    auto it = vehicleIdToIndex.find(vehicleId);
+    if (it == vehicleIdToIndex.end()) return;
+    
+    size_t index = it->second;
+    
+    // Release any occupied segments
+    segmentManager->removeVehicle(vehicleId);
+    
+    // Remove from vehicles vector
+    vehicles.erase(vehicles.begin() + index);
+    vehicleIdToIndex.erase(it);
+    
+    // Update indices
+    for (size_t i = index; i < vehicles.size(); i++) {
+        vehicleIdToIndex[vehicles[i].vehicleId] = i;
+    }
 }
 
-void VehicleController::updateVehicle(int vehicleId, Auto& vehicle) {
-    auto it = vehicleStates.find(vehicleId);
-    if (it == vehicleStates.end() || !vehicle.isValid()) return;
-    
-    VehicleState& state = it->second;
-    
-    if (!state.isMoving || pathSystem.getPathSize() == 0) return;
-    
-    // Get current target node
-    if (state.currentPathIndex >= pathSystem.getPathSize()) {
-        state.currentPathIndex = 0; // Loop back to start
-    }
-    
-    PathNode targetNode = pathSystem.getPath()[state.currentPathIndex];
-    
-    // Move towards target
-    Point newPos = moveTowardsTarget(state.currentPosition, targetNode.position, state.speed);
-    
-    // Check if reached target node
-    float distanceToTarget = state.currentPosition.distanceTo(targetNode.position);
-    if (distanceToTarget < state.speed * 2.0f) {
-        state.currentPosition = targetNode.position;
-        state.currentDirection = targetNode.direction;
-        state.currentPathIndex = (state.currentPathIndex + 1) % pathSystem.getPathSize();
-    } else {
-        state.currentPosition = newPos;
-        // Smooth direction transition towards target
-        state.currentDirection = calculateDirection(state.currentPosition, targetNode.position);
-    }
-    
-    // Update the Auto object with new position
-    // Calculate front point based on direction
-    float dirRadians = static_cast<float>(state.currentDirection) * M_PI / 180.0f;
-    Point idPoint = state.currentPosition;
-    Point frontPoint;
-    frontPoint.x = idPoint.x + std::cos(dirRadians) * 30.0f; // 30 pixel offset
-    frontPoint.y = idPoint.y + std::sin(dirRadians) * 30.0f;
-    
-    vehicle.updatePoints(idPoint, frontPoint);
+Auto* VehicleController::getVehicle(int vehicleId) {
+    auto it = vehicleIdToIndex.find(vehicleId);
+    return (it != vehicleIdToIndex.end()) ? &vehicles[it->second] : nullptr;
 }
 
-void VehicleController::updateAllVehicles(std::vector<Auto>& vehicles) {
+const Auto* VehicleController::getVehicle(int vehicleId) const {
+    auto it = vehicleIdToIndex.find(vehicleId);
+    return (it != vehicleIdToIndex.end()) ? &vehicles[it->second] : nullptr;
+}
+
+void VehicleController::setVehicleTarget(int vehicleId, const Point& targetPosition) {
+    Auto* vehicle = getVehicle(vehicleId);
+    if (!vehicle) return;
+    
+    int targetNodeId = pathSystem->findNearestNode(targetPosition);
+    if (targetNodeId != -1) {
+        setVehicleTarget(vehicleId, targetNodeId);
+    }
+}
+
+void VehicleController::setVehicleTarget(int vehicleId, int targetNodeId) {
+    Auto* vehicle = getVehicle(vehicleId);
+    if (!vehicle || vehicle->currentNodeId == -1) return;
+    
+    vehicle->targetNodeId = targetNodeId;
+    planPath(vehicleId, targetNodeId);
+}
+
+void VehicleController::updateVehicles(float deltaTime) {
     for (Auto& vehicle : vehicles) {
-        if (vehicle.isValid()) {
-            updateVehicle(vehicle.getId(), vehicle);
-        }
+        updateVehicleMovement(vehicle, deltaTime);
     }
-}
-
-void VehicleController::createSamplePath() {
-    pathSystem.clearPath();
     
-    // Create a rectangular path
-    float centerX = 960.0f;
-    float centerY = 600.0f;
-    float width = 300.0f;
-    float height = 200.0f;
-    
-    // Top edge (going east)
-    pathSystem.addNode(centerX - width/2, centerY - height/2, Direction::EAST);
-    pathSystem.addNode(centerX + width/2, centerY - height/2, Direction::SOUTH);
-    
-    // Right edge (going south)
-    pathSystem.addNode(centerX + width/2, centerY + height/2, Direction::WEST);
-    
-    // Bottom edge (going west)
-    pathSystem.addNode(centerX - width/2, centerY + height/2, Direction::NORTH);
-    
-    // Complete the loop
-    pathSystem.addNode(centerX - width/2, centerY - height/2, Direction::EAST);
-}
-
-void VehicleController::setVehicleSpeed(int vehicleId, float speed) {
-    auto it = vehicleStates.find(vehicleId);
-    if (it != vehicleStates.end()) {
-        it->second.speed = speed;
-    }
+    // Update segment manager queues
+    segmentManager->updateQueues();
 }
 
 bool VehicleController::isVehicleMoving(int vehicleId) const {
-    auto it = vehicleStates.find(vehicleId);
-    if (it != vehicleStates.end()) {
-        return it->second.isMoving;
+    const Auto* vehicle = getVehicle(vehicleId);
+    return vehicle && vehicle->state == VehicleState::MOVING;
+}
+
+bool VehicleController::hasVehicleArrived(int vehicleId) const {
+    const Auto* vehicle = getVehicle(vehicleId);
+    return vehicle && vehicle->state == VehicleState::ARRIVED;
+}
+
+std::vector<int> VehicleController::getVehiclesAtPosition(const Point& position, float radius) const {
+    std::vector<int> nearbyVehicles;
+    
+    for (const Auto& vehicle : vehicles) {
+        if (vehicle.position.distanceTo(position) <= radius) {
+            nearbyVehicles.push_back(vehicle.vehicleId);
+        }
     }
+    
+    return nearbyVehicles;
+}
+
+bool VehicleController::planPath(int vehicleId, int targetNodeId) {
+    Auto* vehicle = getVehicle(vehicleId);
+    if (!vehicle || vehicle->currentNodeId == -1) return false;
+    
+    std::vector<int> path = segmentManager->findAvailablePath(
+        vehicle->currentNodeId, targetNodeId, vehicleId);
+    
+    if (!path.empty()) {
+        vehicle->currentPath = path;
+        vehicle->currentSegmentIndex = 0;
+        vehicle->targetNodeId = targetNodeId;
+        vehicle->state = VehicleState::MOVING;
+        return true;
+    }
+    
     return false;
 }
 
-void VehicleController::stopVehicle(int vehicleId) {
-    auto it = vehicleStates.find(vehicleId);
-    if (it != vehicleStates.end()) {
-        it->second.isMoving = false;
+void VehicleController::clearPath(int vehicleId) {
+    Auto* vehicle = getVehicle(vehicleId);
+    if (!vehicle) return;
+    
+    vehicle->currentPath.clear();
+    vehicle->currentSegmentIndex = 0;
+    vehicle->state = VehicleState::IDLE;
+    
+    // Release current segment
+    releaseCurrentSegment(*vehicle);
+}
+
+bool VehicleController::isPathBlocked(int vehicleId) const {
+    const Auto* vehicle = getVehicle(vehicleId);
+    if (!vehicle || vehicle->currentPath.empty()) return false;
+    
+    // Check if current segment is still available
+    if (vehicle->currentSegmentIndex < vehicle->currentPath.size()) {
+        int segmentId = vehicle->currentPath[vehicle->currentSegmentIndex];
+        return !segmentManager->canVehicleEnterSegment(segmentId, vehicleId);
+    }
+    
+    return false;
+}
+
+void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
+    switch (vehicle.state) {
+        case VehicleState::IDLE:
+            // Vehicle is not moving
+            break;
+            
+        case VehicleState::MOVING:
+            moveVehicleAlongPath(vehicle, deltaTime);
+            break;
+            
+        case VehicleState::WAITING:
+            // Try to reserve next segment
+            if (tryReserveNextSegment(vehicle)) {
+                vehicle.state = VehicleState::MOVING;
+            }
+            break;
+            
+        case VehicleState::ARRIVED:
+            // Vehicle has reached destination
+            break;
     }
 }
 
-void VehicleController::startVehicle(int vehicleId) {
-    auto it = vehicleStates.find(vehicleId);
-    if (it != vehicleStates.end()) {
-        it->second.isMoving = true;
+void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
+    if (vehicle.currentPath.empty() || 
+        vehicle.currentSegmentIndex >= vehicle.currentPath.size()) {
+        vehicle.state = VehicleState::ARRIVED;
+        return;
+    }
+    
+    int currentSegmentId = vehicle.currentPath[vehicle.currentSegmentIndex];
+    
+    // Try to reserve current segment if not already reserved
+    if (!segmentManager->canVehicleEnterSegment(currentSegmentId, vehicle.vehicleId)) {
+        if (!segmentManager->reserveSegment(currentSegmentId, vehicle.vehicleId)) {
+            vehicle.state = VehicleState::WAITING;
+            return;
+        }
+    }
+    
+    const PathSegment* segment = pathSystem->getSegment(currentSegmentId);
+    if (!segment) return;
+    
+    // Get start and end positions
+    const PathNode* startNode = pathSystem->getNode(segment->startNodeId);
+    const PathNode* endNode = pathSystem->getNode(segment->endNodeId);
+    if (!startNode || !endNode) return;
+    
+    Point segmentStart = startNode->position;
+    Point segmentEnd = endNode->position;
+    
+    // If we're at the wrong end of the segment, swap
+    if (vehicle.position.distanceTo(segmentEnd) < vehicle.position.distanceTo(segmentStart)) {
+        std::swap(segmentStart, segmentEnd);
+    }
+    
+    // Calculate movement
+    float distance = vehicle.speed * deltaTime;
+    Point direction = (segmentEnd - segmentStart).normalize();
+    Point newPosition = vehicle.position + direction * distance;
+    
+    // Check if we've reached the end of this segment
+    float distanceToEnd = vehicle.position.distanceTo(segmentEnd);
+    if (distance >= distanceToEnd) {
+        // Snap to end position
+        vehicle.position = segmentEnd;
+        vehicle.currentNodeId = endNode->nodeId;
+        
+        // Release current segment
+        segmentManager->releaseSegment(currentSegmentId, vehicle.vehicleId);
+        
+        // Move to next segment
+        vehicle.currentSegmentIndex++;
+        
+        if (vehicle.currentSegmentIndex >= vehicle.currentPath.size()) {
+            // Arrived at destination
+            vehicle.state = VehicleState::ARRIVED;
+        }
+    } else {
+        // Continue moving along segment
+        vehicle.position = newPosition;
+    }
+}
+
+Point VehicleController::interpolatePosition(const Point& start, const Point& end, float t) const {
+    t = std::max(0.0f, std::min(1.0f, t)); // Clamp t to [0, 1]
+    return start + (end - start) * t;
+}
+
+bool VehicleController::tryReserveNextSegment(Auto& vehicle) {
+    if (vehicle.currentPath.empty() || 
+        vehicle.currentSegmentIndex >= vehicle.currentPath.size()) {
+        return false;
+    }
+    
+    int segmentId = vehicle.currentPath[vehicle.currentSegmentIndex];
+    return segmentManager->reserveSegment(segmentId, vehicle.vehicleId);
+}
+
+void VehicleController::releaseCurrentSegment(Auto& vehicle) {
+    int currentSegment = segmentManager->getVehicleSegment(vehicle.vehicleId);
+    if (currentSegment != -1) {
+        segmentManager->releaseSegment(currentSegment, vehicle.vehicleId);
     }
 }

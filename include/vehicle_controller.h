@@ -1,58 +1,51 @@
-
-#ifndef VEHICLE_CONTROLLER_H
-#define VEHICLE_CONTROLLER_H
-
+#pragma once
 #include "auto.h"
-#include "movement_system.h"
-#include <memory>
-#include <map>
+#include "path_system.h"
+#include "segment_manager.h"
+#include <vector>
+#include <unordered_map>
 
-struct VehicleState {
-    Point currentPosition;
-    Direction currentDirection;
-    size_t currentPathIndex;
-    bool isMoving;
-    float speed; // pixels per frame
-    
-    VehicleState() 
-        : currentDirection(Direction::NORTH), currentPathIndex(0), 
-          isMoving(false), speed(2.0f) {}
-};
-
-class VehicleController : public MovementInterface {
-private:
-    std::map<int, VehicleState> vehicleStates;
-    PathSystem pathSystem;
-    
-    Direction calculateDirection(const Point& from, const Point& to) const;
-    Point moveTowardsTarget(const Point& current, const Point& target, float speed) const;
-    
+class VehicleController {
 public:
-    VehicleController();
-    
-    // MovementInterface implementation
-    void moveForward(int vehicleId, float distance) override;
-    void turnLeft(int vehicleId) override;
-    void turnRight(int vehicleId) override;
-    void setPosition(int vehicleId, const Point& position, Direction direction) override;
+    VehicleController(PathSystem* pathSys, SegmentManager* segmentMgr);
     
     // Vehicle management
-    void addVehicle(const Auto& vehicle);
+    int addVehicle(const Point& startPosition);
     void removeVehicle(int vehicleId);
-    void updateVehicle(int vehicleId, Auto& vehicle);
-    void updateAllVehicles(std::vector<Auto>& vehicles);
+    void spawnInitialVehicles(); // Add 4 vehicles at different nodes
+    void assignRandomTargetsToAllVehicles(); // Give all vehicles random targets
+    Auto* getVehicle(int vehicleId);
+    const Auto* getVehicle(int vehicleId) const;
+    
+    // Movement control
+    void setVehicleTarget(int vehicleId, const Point& targetPosition);
+    void setVehicleTarget(int vehicleId, int targetNodeId);
+    void updateVehicles(float deltaTime);
+    
+    // State queries
+    bool isVehicleMoving(int vehicleId) const;
+    bool hasVehicleArrived(int vehicleId) const;
+    std::vector<int> getVehiclesAtPosition(const Point& position, float radius = 20.0f) const;
     
     // Path management
-    void createSamplePath();
-    PathSystem& getPathSystem() { return pathSystem; }
-    const PathSystem& getPathSystem() const { return pathSystem; }
+    bool planPath(int vehicleId, int targetNodeId);
+    void clearPath(int vehicleId);
+    bool isPathBlocked(int vehicleId) const;
     
-    // State access
-    const std::map<int, VehicleState>& getVehicleStates() const { return vehicleStates; }
-    void setVehicleSpeed(int vehicleId, float speed);
-    bool isVehicleMoving(int vehicleId) const;
-    void stopVehicle(int vehicleId);
-    void startVehicle(int vehicleId);
+    // Getters
+    const std::vector<Auto>& getVehicles() const { return vehicles; }
+    size_t getVehicleCount() const { return vehicles.size(); }
+    
+private:
+    void updateVehicleMovement(Auto& vehicle, float deltaTime);
+    void moveVehicleAlongPath(Auto& vehicle, float deltaTime);
+    Point interpolatePosition(const Point& start, const Point& end, float t) const;
+    bool tryReserveNextSegment(Auto& vehicle);
+    void releaseCurrentSegment(Auto& vehicle);
+    
+    PathSystem* pathSystem;
+    SegmentManager* segmentManager;
+    std::vector<Auto> vehicles;
+    std::unordered_map<int, size_t> vehicleIdToIndex;
+    int nextVehicleId;
 };
-
-#endif

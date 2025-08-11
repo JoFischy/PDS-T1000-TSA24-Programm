@@ -1,35 +1,52 @@
-#ifndef AUTO_H
-#define AUTO_H
-
+#pragma once
 #include "point.h"
+#include "movement_system.h"
+#include <vector>
+
+enum class VehicleState {
+    IDLE,
+    MOVING,
+    WAITING,
+    ARRIVED
+};
 
 class Auto {
 private:
-    Point identificationPoint;
-    Point frontPoint;
-    Point center;
-    float direction;
-    bool valid;
     static int nextId;
-    int id;
-
+    
 public:
+    // Original members from the cpp implementation
+    bool valid;
+    Direction currentDirection;
+    float speed;
+    int id;
+    int currentSegmentId;
+    bool isMoving;
+    bool isWaitingInQueue;
+    Point position;
+    Point targetPosition;
+    
+    // New members from the previous struct version
+    VehicleState state;
+    std::vector<int> currentPath;
+    int currentSegmentIndex;
+    int currentNodeId;
+    int targetNodeId;
+    float size;
+    int vehicleId;
+    
+    // Constructors
     Auto();
-    Auto(const Point& idPoint, const Point& fPoint);
-
-    // Update auto with two points
-    void updatePoints(const Point& idPoint, const Point& fPoint);
-
-    // Getters
-    Point getCenter() const { return center; }
-    Point getIdentificationPoint() const { return identificationPoint; }
-    Point getFrontPoint() const { return frontPoint; }
-    float getDirection() const { return direction; }
-    bool isValid() const { return valid; }
+    Auto(const Point& startPos, Direction dir);
+    Auto(int vehicleId, const Point& startPos); // Constructor for vehicle controller
+    
+    // Methods expected by the cpp implementation
+    void setPosition(const Point& pos);
+    void setTargetPosition(const Point& target);
+    void updatePosition(float deltaTime);
+    void calculateDirection();
+    
+    // Getter methods for compatibility
     int getId() const { return id; }
-
-private:
-    void calculateCenterAndDirection();
+    bool isValid() const { return valid; }
 };
-
-#endif

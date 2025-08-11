@@ -1,42 +1,98 @@
-#ifndef RENDERER_H
-#define RENDERER_H
-
+#pragma once
+#include "path_system.h"
+#include "vehicle_controller.h"
+#include "path_detector.h"
 #include "raylib.h"
-#include "point.h"
-#include "auto.h"
-#include "movement_system.h"
-#include <vector>
 
 class Renderer {
-private:
-    int screenWidth;
-    int screenHeight;
-
-    // Colors
-    Color backgroundColor;
-    Color pointColor;
-    Color selectedPointColor;
-    Color autoColor;
-    Color uiColor;
-
 public:
-    Renderer(int width, int height);
-
-    void initialize();
+    Renderer();
+    ~Renderer();
+    
+    // Initialization
+    bool initialize(int windowWidth, int windowHeight, const char* title);
     void cleanup();
-    bool shouldClose();
-    void render(const std::vector<Point>& points, const std::vector<Auto>& detectedAutos, float tolerance);
-    void render(const std::vector<Point>& points, const std::vector<Auto>& detectedAutos, float tolerance, const PathSystem& pathSystem);
-    void renderPath(const std::vector<Point>& path); // Added for path rendering
-
+    
+    // Background image
+    bool loadBackgroundImage(const char* imagePath);
+    
+    // Main rendering
+    void beginFrame();
+    void endFrame();
+    void renderBackground();
+    void renderPathSystem(const PathSystem& pathSystem);
+    void renderVehicles(const VehicleController& vehicleController);
+    void renderDebugInfo(const PathDetector& pathDetector, const PathSystem& pathSystem);
+    void renderUI();
+    
+    // Camera controls
+    void updateCamera();
+    void zoomIn();
+    void zoomOut();
+    void resetCamera();
+    void setCameraTarget(float x, float y);
+    
+    // Settings
+    void setShowNodes(bool show) { showNodes = show; }
+    void setShowSegments(bool show) { showSegments = show; }
+    void setShowIntersections(bool show) { showIntersections = show; }
+    void setShowVehicleIds(bool show) { showVehicleIds = show; }
+    void setShowDebugInfo(bool show) { showDebugInfo = show; }
+    
+    bool getShowNodes() const { return showNodes; }
+    bool getShowSegments() const { return showSegments; }
+    bool getShowIntersections() const { return showIntersections; }
+    bool getShowVehicleIds() const { return showVehicleIds; }
+    bool getShowDebugInfo() const { return showDebugInfo; }
+    
+    // Coordinate picker
+    void enableCoordinatePicker(bool enable) { coordinatePickerEnabled = enable; }
+    bool isCoordinatePickerEnabled() const { return coordinatePickerEnabled; }
+    Point getPickerCoordinates() const { return pickerPosition; }
+    
+    // Utility
+    Point screenToWorld(const Point& screenPos) const;
+    Point worldToScreen(const Point& worldPos) const;
+    bool shouldClose() const;
+    
 private:
-    void drawPoint(const Point& point, int index, bool isSelected);
-    void drawAuto(const Auto& auto_);
-    void drawUI(float tolerance);
-    void drawToleranceVisualization(const std::vector<Point>& points, float tolerance);
-    void drawVehicleInfo(const std::vector<Auto>& detectedAutos);
-    void drawPathSegment(const Point& start, const Point& end); // Helper for drawing path segments
-    void drawPath(const PathSystem& pathSystem); // Added for path rendering
+    void renderNode(const PathNode& node);
+    void renderSegment(const PathSegment& segment, const PathSystem& pathSystem);
+    void renderVehicle(const Auto& vehicle);
+    void renderIntersection(const Point& intersection);
+    void renderCoordinatePicker();
+    void updateCoordinatePicker();
+    
+    // Graphics resources
+    Texture2D backgroundTexture;
+    Camera2D camera;
+    bool hasBackgroundImage;
+    
+    // Rendering settings
+    bool showNodes;
+    bool showSegments;
+    bool showIntersections;
+    bool showVehicleIds;
+    bool showDebugInfo;
+    
+    // Coordinate picker
+    bool coordinatePickerEnabled;
+    Point pickerPosition;
+    bool isDraggingPicker;
+    float pickerRadius;
+    
+    // Window properties
+    int windowWidth;
+    int windowHeight;
+    bool isInitialized;
+    
+    // Colors
+    static const Color NODE_COLOR;
+    static const Color SEGMENT_COLOR;
+    static const Color OCCUPIED_SEGMENT_COLOR;
+    static const Color VEHICLE_COLOR;
+    static const Color INTERSECTION_COLOR;
+    static const Color UI_BACKGROUND_COLOR;
+    static const Color UI_TEXT_COLOR;
+    static const Color PICKER_COLOR;
 };
-
-#endif
