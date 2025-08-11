@@ -5,36 +5,39 @@
 
 class SegmentManager {
 public:
-    explicit SegmentManager(PathSystem* pathSystem);
-    
-    // Segment reservation and release
+    SegmentManager(PathSystem* pathSys);
+
+    // Segment reservation
     bool reserveSegment(int segmentId, int vehicleId);
     void releaseSegment(int segmentId, int vehicleId);
-    
-    // Status queries
     bool isSegmentOccupied(int segmentId) const;
-    int getSegmentOccupant(int segmentId) const;
-    bool canVehicleEnterSegment(int segmentId, int vehicleId) const;
-    
+
     // Queue management
     void addToQueue(int segmentId, int vehicleId);
     void removeFromQueue(int segmentId, int vehicleId);
-    int getNextInQueue(int segmentId) const;
     bool isVehicleInQueue(int segmentId, int vehicleId) const;
+    int getNextInQueue(int segmentId) const;
+    void updateQueues();
+    int getSegmentOccupant(int segmentId) const;
+    std::vector<int> getVehiclesReadyToMove() const;
     size_t getQueueLength(int segmentId) const;
-    
+
+
     // Vehicle tracking
     void setVehicleSegment(int vehicleId, int segmentId);
     int getVehicleSegment(int vehicleId) const;
     void removeVehicle(int vehicleId);
-    
-    // Path planning with exclusions
+
+    // Advanced path finding with traffic considerations
     std::vector<int> findAvailablePath(int startNodeId, int endNodeId, int vehicleId) const;
-    
-    // Update system
-    void updateQueues();
-    std::vector<int> getVehiclesReadyToMove() const;
-    
+    std::vector<int> findOptimalPath(int startNodeId, int endNodeId, int vehicleId) const;
+    bool canVehicleEnterSegment(int segmentId, int vehicleId) const;
+    bool isPathClear(const std::vector<int>& path, int vehicleId) const;
+
+    // Traffic analysis
+    int getSegmentCongestion(int segmentId) const;
+    std::vector<int> getAlternativePaths(int startNodeId, int endNodeId, int vehicleId) const;
+
 private:
     PathSystem* pathSystem;
     std::unordered_map<int, int> vehicleSegmentMap; // vehicleId -> segmentId

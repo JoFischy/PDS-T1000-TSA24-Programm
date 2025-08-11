@@ -17,6 +17,11 @@ public:
     Auto* getVehicle(int vehicleId);
     const Auto* getVehicle(int vehicleId) const;
     
+    // Smart target assignment
+    void setVehicleTargetNode(int vehicleId, int targetNodeId);
+    void assignNewRandomTarget(int vehicleId);
+    bool isVehicleAtTarget(int vehicleId) const;
+    
     // Movement control
     void setVehicleTarget(int vehicleId, const Point& targetPosition);
     void setVehicleTarget(int vehicleId, int targetNodeId);
@@ -29,12 +34,16 @@ public:
     
     // Path management
     bool planPath(int vehicleId, int targetNodeId);
+    bool replanPathIfBlocked(int vehicleId);
     void clearPath(int vehicleId);
     bool isPathBlocked(int vehicleId) const;
+    bool findAlternativePath(int vehicleId);
+    void handleBlockedVehicle(Auto& vehicle);
     
     // Getters
     const std::vector<Auto>& getVehicles() const { return vehicles; }
     size_t getVehicleCount() const { return vehicles.size(); }
+    const PathSystem* getPathSystem() const { return pathSystem; }
     
 private:
     void updateVehicleMovement(Auto& vehicle, float deltaTime);
