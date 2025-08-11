@@ -1,5 +1,6 @@
 #include "segment_manager.h"
 #include <algorithm>
+#include <iostream>
 
 SegmentManager::SegmentManager(PathSystem* pathSys) : pathSystem(pathSys) {}
 
@@ -7,7 +8,13 @@ bool SegmentManager::reserveSegment(int segmentId, int vehicleId) {
     PathSegment* segment = pathSystem->getSegment(segmentId);
     if (!segment) return false;
 
-    if (segment->isOccupied) {
+    // If segment is occupied by the same vehicle, that's fine
+    if (segment->isOccupied && segment->occupiedByVehicleId == vehicleId) {
+        return true;
+    }
+
+    // If occupied by another vehicle, can't reserve
+    if (segment->isOccupied && segment->occupiedByVehicleId != vehicleId) {
         // Add to queue if not already there
         if (!isVehicleInQueue(segmentId, vehicleId)) {
             addToQueue(segmentId, vehicleId);
@@ -15,29 +22,32 @@ bool SegmentManager::reserveSegment(int segmentId, int vehicleId) {
         return false;
     }
 
-    // Reserve the segment
+    // Segment is free - reserve it
     segment->isOccupied = true;
     segment->occupiedByVehicleId = vehicleId;
     setVehicleSegment(vehicleId, segmentId);
 
+    std::cout << "Vehicle " << vehicleId << " reserved segment " << segmentId << std::endl;
     return true;
 }
 
 void SegmentManager::releaseSegment(int segmentId, int vehicleId) {
     PathSegment* segment = pathSystem->getSegment(segmentId);
-    if (!segment || segment->occupiedByVehicleId != vehicleId) return;
+    if (!segment) return;
 
-    // Release the segment
-    segment->isOccupied = false;
-    segment->occupiedByVehicleId = -1;
+    // Only release if actually occupied by this vehicle
+    if (segment->isOccupied && segment->occupiedByVehicleId == vehicleId) {
+        segment->isOccupied = false;
+        segment->occupiedByVehicleId = -1;
+        
+        std::cout << "Vehicle " << vehicleId << " released segment " << segmentId << std::endl;
+    }
 
     // Remove vehicle from tracking
     vehicleSegmentMap.erase(vehicleId);
-
-    // Process queue for this segment
-    if (!segment->queuedVehicles.empty()) {
-        // The next vehicle in queue will be processed in updateQueues()
-    }
+    
+    // Also remove from queue if present
+    removeFromQueue(segmentId, vehicleId);
 }
 
 bool SegmentManager::isSegmentOccupied(int segmentId) const {
@@ -135,36 +145,7 @@ std::vector<int> SegmentManager::findAvailablePath(int startNodeId, int endNodeI
         return {};
     }
 
-    // Erste Versuche: Pfad ohne blockierte Segmente
-    std::vector<int> excludedSegments;
-    for (const auto& segment : pathSystem->getSegments()) {
-        if (segment.isOccupied && segment.occupiedByVehicleId != vehicleId) {
-            excludedSegments.push_back(segment.segmentId);
-        }
-    }
-
-    std::vector<int> path = pathSystem->findPath(startNodeId, endNodeId, excludedSegments);
-    
-    if (!path.empty()) {
-        return path;
-    }
-
-    // Zweiter Versuch: Nur schwer blockierte Segmente ausschließen
-    excludedSegments.clear();
-    for (const auto& segment : pathSystem->getSegments()) {
-        if (segment.isOccupied && segment.occupiedByVehicleId != vehicleId && 
-            getSegmentCongestion(segment.segmentId) > 1) {
-            excludedSegments.push_back(segment.segmentId);
-        }
-    }
-
-    path = pathSystem->findPath(startNodeId, endNodeId, excludedSegments);
-    
-    if (!path.empty()) {
-        return path;
-    }
-
-    // Letzter Versuch: Pfad ohne Ausschlüsse (auch wenn blockiert)
+    // Always find a path - let the movement logic handle conflicts
     return pathSystem->findPath(startNodeId, endNodeId, {});
 }
 
@@ -206,7 +187,15 @@ bool SegmentManager::canVehicleEnterSegment(int segmentId, int vehicleId) const 
     if (!segment->isOccupied) return true;
 
     // Can enter if already occupying this segment
-    return segment->occupiedByVehicleId == vehicleId;
+    if (segment->occupiedByVehicleId == vehicleId) return true;
+    
+    // Allow shared access for segments with low congestion (experimental)
+    // This allows multiple vehicles on longer segments
+    if (segment->length > 100.0f && segment->queuedVehicles.size() < 2) {
+        return true;
+    }
+
+    return false;
 }
 
 void SegmentManager::updateQueues() {
@@ -215,13 +204,22 @@ void SegmentManager::updateQueues() {
         if (!segment.isOccupied && !segment.queuedVehicles.empty()) {
             int nextVehicleId = segment.queuedVehicles.front();
 
-            // Try to reserve the segment for the next vehicle in queue
-            if (reserveSegment(segment.segmentId, nextVehicleId)) {
+            // Get the actual segment pointer for modification
+            PathSegment* seg = pathSystem->getSegment(segment.segmentId);
+            if (!seg) continue;
+
+            // Double check it's not occupied
+            if (!seg->isOccupied) {
+                // Reserve the segment directly (bypass the queue check in reserveSegment)
+                seg->isOccupied = true;
+                seg->occupiedByVehicleId = nextVehicleId;
+                setVehicleSegment(nextVehicleId, segment.segmentId);
+                
                 // Remove from queue since it now occupies the segment
-                PathSegment* seg = pathSystem->getSegment(segment.segmentId);
-                if (seg) {
-                    seg->queuedVehicles.erase(seg->queuedVehicles.begin());
-                }
+                seg->queuedVehicles.erase(seg->queuedVehicles.begin());
+                
+                std::cout << "Queue processed: Vehicle " << nextVehicleId 
+                         << " got segment " << segment.segmentId << std::endl;
             }
         }
     }

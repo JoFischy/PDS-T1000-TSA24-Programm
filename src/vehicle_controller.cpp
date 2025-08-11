@@ -131,6 +131,22 @@ void VehicleController::setVehicleTargetNode(int vehicleId, int targetNodeId) {
     
     // Nur setzen wenn sich das Ziel geändert hat
     if (vehicle->targetNodeId != targetNodeId) {
+        // First release any occupied segments
+        releaseCurrentSegment(*vehicle);
+        
+        // Stelle sicher, dass das Fahrzeug an einem gültigen Knoten ist
+        if (vehicle->currentNodeId == -1) {
+            int nearestNodeId = pathSystem->findNearestNode(vehicle->position);
+            if (nearestNodeId != -1) {
+                vehicle->currentNodeId = nearestNodeId;
+                const PathNode* node = pathSystem->getNode(nearestNodeId);
+                if (node) {
+                    vehicle->position = node->position;
+                }
+                std::cout << "Vehicle " << vehicleId << " snapped to nearest node " << nearestNodeId << std::endl;
+            }
+        }
+        
         vehicle->targetNodeId = targetNodeId;
         vehicle->state = VehicleState::IDLE;
         clearPath(vehicleId);
@@ -208,6 +224,25 @@ bool VehicleController::planPath(int vehicleId, int targetNodeId) {
     Auto* vehicle = getVehicle(vehicleId);
     if (!vehicle || vehicle->currentNodeId == -1) return false;
     
+    // Release any currently occupied segments first
+    releaseCurrentSegment(*vehicle);
+    
+    // Stelle sicher, dass das Fahrzeug an einem gültigen Knoten ist
+    if (vehicle->currentNodeId == -1) {
+        // Finde nächstgelegenen Knoten
+        int nearestNodeId = pathSystem->findNearestNode(vehicle->position);
+        if (nearestNodeId != -1) {
+            vehicle->currentNodeId = nearestNodeId;
+            const PathNode* node = pathSystem->getNode(nearestNodeId);
+            if (node) {
+                vehicle->position = node->position;
+            }
+            std::cout << "Vehicle " << vehicleId << " moved to nearest node " << nearestNodeId << std::endl;
+        } else {
+            return false;
+        }
+    }
+    
     // Bereits am Ziel?
     if (vehicle->currentNodeId == targetNodeId) {
         vehicle->state = VehicleState::ARRIVED;
@@ -215,21 +250,19 @@ bool VehicleController::planPath(int vehicleId, int targetNodeId) {
         return true;
     }
     
-    // Versuche verfügbare Route zu finden
-    std::vector<int> path = segmentManager->findAvailablePath(
-        vehicle->currentNodeId, targetNodeId, vehicleId);
+    // Finde immer einen Pfad, auch wenn Segmente belegt sind
+    std::vector<int> path = pathSystem->findPath(vehicle->currentNodeId, targetNodeId, {});
     
     if (!path.empty()) {
         vehicle->currentPath = path;
         vehicle->currentSegmentIndex = 0;
         vehicle->targetNodeId = targetNodeId;
-        vehicle->state = VehicleState::MOVING;
+        vehicle->state = VehicleState::IDLE;
         std::cout << "Vehicle " << vehicleId << " planned path with " << path.size() << " segments" << std::endl;
         return true;
     } else {
-        // Keine direkte Route verfügbar - warten oder alternative Route finden
         vehicle->state = VehicleState::WAITING;
-        std::cout << "Vehicle " << vehicleId << " waiting - no available path to target" << std::endl;
+        std::cout << "Vehicle " << vehicleId << " no path found to target" << std::endl;
         return false;
     }
 }
@@ -274,21 +307,30 @@ void VehicleController::handleBlockedVehicle(Auto& vehicle) {
     
     waitTimers[vehicle.vehicleId] += 0.016f; // ca. 60 FPS
     
-    // Warte 1 Sekunde bevor neuer Versuch
-    if (waitTimers[vehicle.vehicleId] > 1.0f) {
+    // Warte 0.5 Sekunden bevor neuer Versuch (schneller)
+    if (waitTimers[vehicle.vehicleId] > 0.5f) {
         waitTimers[vehicle.vehicleId] = 0.0f;
         retryCount[vehicle.vehicleId]++;
         
-        // Nach 3 Versuchen, plane komplett neue Route
-        if (retryCount[vehicle.vehicleId] > 3) {
+        // Versuche zuerst das aktuelle Segment erneut zu reservieren
+        if (!vehicle.currentPath.empty() && 
+            vehicle.currentSegmentIndex < vehicle.currentPath.size()) {
+            
+            int currentSegmentId = vehicle.currentPath[vehicle.currentSegmentIndex];
+            if (segmentManager->reserveSegment(currentSegmentId, vehicle.vehicleId)) {
+                vehicle.state = VehicleState::MOVING;
+                retryCount[vehicle.vehicleId] = 0;
+                std::cout << "Vehicle " << vehicle.vehicleId << " successfully reserved segment " << currentSegmentId << std::endl;
+                return;
+            }
+        }
+        
+        // Nach 5 Versuchen, plane komplett neue Route
+        if (retryCount[vehicle.vehicleId] > 5) {
             retryCount[vehicle.vehicleId] = 0;
+            std::cout << "Vehicle " << vehicle.vehicleId << " replanning path after timeout" << std::endl;
             clearPath(vehicle.vehicleId);
             planPath(vehicle.vehicleId, vehicle.targetNodeId);
-        } else {
-            // Versuche alternative Route zu finden
-            if (findAlternativePath(vehicle.vehicleId)) {
-                retryCount[vehicle.vehicleId] = 0; // Reset bei Erfolg
-            }
         }
     }
 }
@@ -319,11 +361,27 @@ bool VehicleController::isPathBlocked(int vehicleId) const {
 }
 
 void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
+    static int debugCounter = 0;
+    bool debug = (debugCounter++ % 180 == 0); // Debug every 3 seconds at 60 FPS
+    
     switch (vehicle.state) {
         case VehicleState::IDLE:
-            // Fahrzeug wartet auf neue Aufgabe
+            if (debug) {
+                std::cout << "Vehicle " << vehicle.vehicleId << " IDLE at node " 
+                         << vehicle.currentNodeId << " target " << vehicle.targetNodeId << std::endl;
+            }
+            // Fahrzeug wartet auf neue Aufgabe oder nächstes Segment
             if (vehicle.targetNodeId != -1 && vehicle.currentNodeId != vehicle.targetNodeId) {
-                planPath(vehicle.vehicleId, vehicle.targetNodeId);
+                if (!vehicle.currentPath.empty() && vehicle.currentSegmentIndex < vehicle.currentPath.size()) {
+                    // Hat bereits einen Pfad - versuche Bewegung fortzusetzen
+                    moveVehicleAlongPath(vehicle, deltaTime);
+                } else {
+                    // Neuen Pfad planen
+                    if (debug) {
+                        std::cout << "Vehicle " << vehicle.vehicleId << " planning new path" << std::endl;
+                    }
+                    planPath(vehicle.vehicleId, vehicle.targetNodeId);
+                }
             }
             break;
             
@@ -339,6 +397,9 @@ void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
         case VehicleState::ARRIVED:
             // Fahrzeug hat Ziel erreicht - automatisch neues Ziel zuweisen
             if (vehicle.currentNodeId == vehicle.targetNodeId) {
+                if (debug) {
+                    std::cout << "Vehicle " << vehicle.vehicleId << " arrived, assigning new target" << std::endl;
+                }
                 assignNewRandomTarget(vehicle.vehicleId);
             }
             break;
@@ -354,47 +415,101 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
     
     int currentSegmentId = vehicle.currentPath[vehicle.currentSegmentIndex];
     
-    // Versuche das aktuelle Segment zu reservieren
-    if (!segmentManager->reserveSegment(currentSegmentId, vehicle.vehicleId)) {
-        vehicle.state = VehicleState::WAITING;
-        std::cout << "Vehicle " << vehicle.vehicleId << " waiting for segment " << currentSegmentId << std::endl;
-        return;
-    }
-    
+    // Get segment information
     const PathSegment* segment = pathSystem->getSegment(currentSegmentId);
     if (!segment) {
         vehicle.state = VehicleState::WAITING;
         return;
     }
     
-    // Bestimme Start- und Zielknoten basierend auf aktueller Position
+    // Only try to reserve segment when we're actually at one of the segment's nodes
     const PathNode* startNode = pathSystem->getNode(segment->startNodeId);
     const PathNode* endNode = pathSystem->getNode(segment->endNodeId);
+    
+    bool atSegmentStart = (vehicle.currentNodeId == startNode->nodeId);
+    bool atSegmentEnd = (vehicle.currentNodeId == endNode->nodeId);
+    bool atSegmentNode = atSegmentStart || atSegmentEnd;
+    
+    // Only check reservation when actually at segment boundary
+    if (atSegmentNode && !segmentManager->canVehicleEnterSegment(currentSegmentId, vehicle.vehicleId)) {
+        if (!segmentManager->reserveSegment(currentSegmentId, vehicle.vehicleId)) {
+            vehicle.state = VehicleState::WAITING;
+            std::cout << "Vehicle " << vehicle.vehicleId << " waiting for segment " << currentSegmentId << std::endl;
+            return;
+        }
+    }
+    
+    // We can move on this segment
+    vehicle.state = VehicleState::MOVING;
+    
+    // segment, startNode, and endNode are already defined above, no need to redeclare
+    if (!segment) {
+        segmentManager->releaseSegment(currentSegmentId, vehicle.vehicleId);
+        vehicle.state = VehicleState::WAITING;
+        return;
+    }
+    
+    // Bestimme Zielknoten basierend auf der Pfadrichtung
+    // startNode and endNode are already defined above
     if (!startNode || !endNode) return;
     
-    // Bestimme Fahrtrichtung basierend auf dem aktuellen Knoten des Fahrzeugs
+    // Bestimme den nächsten Knoten im Pfad
     Point targetPos;
     int targetNodeId;
     
-    if (vehicle.currentNodeId == startNode->nodeId) {
-        // Fahrzeug ist am Startknoten, fahre zum Endknoten
-        targetPos = endNode->position;
-        targetNodeId = endNode->nodeId;
-    } else if (vehicle.currentNodeId == endNode->nodeId) {
-        // Fahrzeug ist am Endknoten, fahre zum Startknoten
-        targetPos = startNode->position;
-        targetNodeId = startNode->nodeId;
-    } else {
-        // Fahrzeug ist nicht an einem der Segment-Enden, fahre zum nächstgelegenen
-        float distToStart = vehicle.position.distanceTo(startNode->position);
-        float distToEnd = vehicle.position.distanceTo(endNode->position);
+    // Schaue voraus zum nächsten Segment um die Richtung zu bestimmen
+    if (vehicle.currentSegmentIndex + 1 < vehicle.currentPath.size()) {
+        int nextSegmentId = vehicle.currentPath[vehicle.currentSegmentIndex + 1];
+        const PathSegment* nextSegment = pathSystem->getSegment(nextSegmentId);
         
-        if (distToStart < distToEnd) {
+        if (nextSegment) {
+            // Finde den gemeinsamen Knoten zwischen aktuellem und nächstem Segment
+            int sharedNode = -1;
+            if (segment->startNodeId == nextSegment->startNodeId || segment->startNodeId == nextSegment->endNodeId) {
+                sharedNode = segment->startNodeId;
+            } else if (segment->endNodeId == nextSegment->startNodeId || segment->endNodeId == nextSegment->endNodeId) {
+                sharedNode = segment->endNodeId;
+            }
+            
+            if (sharedNode != -1) {
+                // Fahre zum gemeinsamen Knoten
+                const PathNode* sharedNodePtr = pathSystem->getNode(sharedNode);
+                if (sharedNodePtr) {
+                    targetPos = sharedNodePtr->position;
+                    targetNodeId = sharedNode;
+                }
+            } else {
+                // Fallback: fahre zum nächstgelegenen Ende
+                float distToStart = vehicle.position.distanceTo(startNode->position);
+                float distToEnd = vehicle.position.distanceTo(endNode->position);
+                if (distToStart < distToEnd) {
+                    targetPos = startNode->position;
+                    targetNodeId = startNode->nodeId;
+                } else {
+                    targetPos = endNode->position;
+                    targetNodeId = endNode->nodeId;
+                }
+            }
+        }
+    } else {
+        // Letztes Segment - fahre zum Zielknoten
+        if (vehicle.targetNodeId == startNode->nodeId) {
             targetPos = startNode->position;
             targetNodeId = startNode->nodeId;
-        } else {
+        } else if (vehicle.targetNodeId == endNode->nodeId) {
             targetPos = endNode->position;
             targetNodeId = endNode->nodeId;
+        } else {
+            // Fahre zum nächstgelegenen Ende
+            float distToStart = vehicle.position.distanceTo(startNode->position);
+            float distToEnd = vehicle.position.distanceTo(endNode->position);
+            if (distToStart < distToEnd) {
+                targetPos = startNode->position;
+                targetNodeId = startNode->nodeId;
+            } else {
+                targetPos = endNode->position;
+                targetNodeId = endNode->nodeId;
+            }
         }
     }
     
@@ -412,12 +527,12 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
                   << ", speed=" << vehicle.speed << ", moveDistance=" << moveDistance << std::endl;
     }
     
-    if (moveDistance >= distanceToTarget || distanceToTarget < 5.0f) {
+    if (moveDistance >= distanceToTarget || distanceToTarget < 10.0f) {
         // Am Zielknoten des Segments angekommen
         vehicle.position = targetPos;
         vehicle.currentNodeId = targetNodeId;
         
-        // Segment freigeben
+        // Segment sofort freigeben wenn wir den Zielknoten erreicht haben
         segmentManager->releaseSegment(currentSegmentId, vehicle.vehicleId);
         
         // Zum nächsten Segment wechseln
@@ -429,8 +544,10 @@ void VehicleController::moveVehicleAlongPath(Auto& vehicle, float deltaTime) {
             vehicle.currentPath.clear();
             std::cout << "Vehicle " << vehicle.vehicleId << " arrived at final target node " << vehicle.targetNodeId << std::endl;
         } else {
+            // Zurück zu IDLE für nächstes Segment
+            vehicle.state = VehicleState::IDLE;
             std::cout << "Vehicle " << vehicle.vehicleId << " reached node " << targetNodeId 
-                      << ", moving to next segment " << vehicle.currentSegmentIndex << std::endl;
+                      << ", preparing for next segment " << vehicle.currentSegmentIndex << std::endl;
         }
     } else {
         // Weiter in Richtung Zielknoten bewegen
