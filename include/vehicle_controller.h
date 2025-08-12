@@ -111,6 +111,11 @@ private:
     bool tryEvasionRoute(int vehicleId, int tJunctionId);
     bool hasMinimumDistanceToOtherVehicles(const Auto& vehicle, float minDistance);
     bool canMoveWithoutViolatingDistance(const Auto& vehicle, const Point& targetPosition, float minDistance);
+    
+    // Junction-specific helper methods
+    bool hasNearbyVehiclesAtSameJunction(const Auto& vehicle);
+    int findAssociatedTJunction(int nodeId);
+    bool hasMinimumDistanceToNearbyJunctionVehicles(const Auto& vehicle, float minDistance);
 
     PathSystem* pathSystem;
     SegmentManager* segmentManager;

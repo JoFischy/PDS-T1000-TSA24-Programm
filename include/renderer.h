@@ -102,6 +102,16 @@ private:
     static const Color UI_TEXT_COLOR;
     static const Color PICKER_COLOR;
     
+    // Node type colors
+    static const Color WAITING_NODE_COLOR;
+    static const Color WAITING_NODE_BORDER_COLOR;
+    static const Color T_JUNCTION_COLOR;
+    static const Color T_JUNCTION_BORDER_COLOR;
+    static const Color CROSSROAD_COLOR;
+    static const Color CROSSROAD_BORDER_COLOR;
+    static const Color CURVE_NODE_COLOR;
+    static const Color CURVE_NODE_BORDER_COLOR;
+    
     // Vehicle color system
     static const Color VEHICLE_COLORS[];
     static const Color WAITING_COLORS[];

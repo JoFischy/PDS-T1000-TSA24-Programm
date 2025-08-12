@@ -665,22 +665,21 @@ void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
                 // Check for upcoming conflicts and minimum distance
                 const PathNode* currentNode = pathSystem->getNode(vehicle.currentNodeId);
                 
-                // Check minimum distance (reduced to 100 pixels)
-                if (currentNode && currentNode->isWaitingNode && !hasMinimumDistanceToOtherVehicles(vehicle, 100.0f)) {
-                    vehicle.state = VehicleState::WAITING;
-                    if (debug) {
-                        std::cout << "Vehicle " << vehicle.vehicleId << " waiting for minimum distance at waiting node" << std::endl;
+                // Only wait if there are actually other vehicles nearby at the same junction
+                if (currentNode && currentNode->isWaitingNode && hasNearbyVehiclesAtSameJunction(vehicle)) {
+                    if (!hasMinimumDistanceToNearbyJunctionVehicles(vehicle, 120.0f)) {
+                        vehicle.state = VehicleState::WAITING;
+                        if (debug) {
+                            std::cout << "Vehicle " << vehicle.vehicleId << " waiting - too close to other vehicles at same junction" << std::endl;
+                        }
+                        break;
                     }
-                    break;
-                }
-                
-                // Advanced conflict detection
-                if (currentNode && currentNode->isWaitingNode) {
+                    
                     auto conflicts = segmentManager->detectPotentialConflicts(vehicle.vehicleId, vehicle.currentPath);
                     if (segmentManager->shouldWaitAtWaitingNode(vehicle.vehicleId, conflicts)) {
                         vehicle.state = VehicleState::WAITING;
                         if (debug) {
-                            std::cout << "Vehicle " << vehicle.vehicleId << " waiting due to predicted conflicts" << std::endl;
+                            std::cout << "Vehicle " << vehicle.vehicleId << " waiting - conflict detected with nearby vehicles" << std::endl;
                         }
                         break;
                     }
@@ -746,21 +745,28 @@ void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
             break;
 
         case VehicleState::WAITING: {
-            // Vehicles can only wait at waiting nodes
+            // Vehicles can only wait at waiting nodes - strict enforcement
             const PathNode* currentNode = pathSystem->getNode(vehicle.currentNodeId);
             if (!currentNode || !currentNode->isWaitingNode) {
-                std::cout << "Vehicle " << vehicle.vehicleId << " cannot wait at non-waiting node " << vehicle.currentNodeId << std::endl;
+                std::cout << "Vehicle " << vehicle.vehicleId << " FORCED to move from non-waiting node " << vehicle.currentNodeId << " to waiting node" << std::endl;
                 moveToNearestWaitingNode(vehicle);
                 break;
             }
 
-            // Check for deadlock and resolve it
+            // Check for deadlock and resolve it - reduced timeout to 5 seconds
             if (segmentManager->isVehicleDeadlocked(vehicle.vehicleId) || 
-                rerouteTimers[vehicle.vehicleId] > 10.0f) { // Force reroute after 10 seconds of waiting
+                rerouteTimers[vehicle.vehicleId] > 5.0f) { // Force reroute after 5 seconds of waiting
                 
-                std::cout << "Vehicle " << vehicle.vehicleId << " resolving deadlock/long wait" << std::endl;
+                std::cout << "Vehicle " << vehicle.vehicleId << " resolving deadlock/long wait after " << rerouteTimers[vehicle.vehicleId] << " seconds" << std::endl;
                 segmentManager->clearDeadlockFlag(vehicle.vehicleId);
                 rerouteTimers[vehicle.vehicleId] = 0.0f;
+                
+                // Force vehicle to proceed if no nearby vehicles at same junction
+                if (!hasNearbyVehiclesAtSameJunction(vehicle)) {
+                    std::cout << "Vehicle " << vehicle.vehicleId << " forced to proceed - no nearby vehicles" << std::endl;
+                    vehicle.state = VehicleState::IDLE;
+                    break;
+                }
                 
                 // Try alternative route or assign new target
                 if (!findAlternativeRouteFromWaitingNode(vehicle)) {
@@ -769,8 +775,8 @@ void VehicleController::updateVehicleMovement(Auto& vehicle, float deltaTime) {
                 break;
             }
             
-            // Handle blocked vehicles - try every second
-            if (rerouteTimers[vehicle.vehicleId] > 1.0f) {
+            // Handle blocked vehicles - try every 0.5 seconds for faster response
+            if (rerouteTimers[vehicle.vehicleId] > 0.5f) {
                 rerouteTimers[vehicle.vehicleId] = 0.0f;
                 handleBlockedVehicle(vehicle);
             }
@@ -1398,34 +1404,107 @@ bool VehicleController::hasMinimumDistanceToOtherVehicles(const Auto& vehicle, f
     return true;
 }
 
+bool VehicleController::hasNearbyVehiclesAtSameJunction(const Auto& vehicle) {
+    const PathNode* currentNode = pathSystem->getNode(vehicle.currentNodeId);
+    if (!currentNode || !currentNode->isWaitingNode) return false;
+
+    // Find the associated T-junction for this waiting node
+    int associatedJunction = findAssociatedTJunction(vehicle.currentNodeId);
+    if (associatedJunction == -1) return false;
+
+    // Check if any other vehicle is within 200 pixels and associated with the same T-junction
+    for (const Auto& otherVehicle : vehicles) {
+        if (otherVehicle.vehicleId == vehicle.vehicleId) continue;
+        
+        float distance = vehicle.position.distanceTo(otherVehicle.position);
+        if (distance > 200.0f) continue; // Reduced radius - only very nearby vehicles
+        
+        // Only count vehicles that are moving or about to move
+        if (otherVehicle.state == VehicleState::ARRIVED || 
+            otherVehicle.state == VehicleState::WAITING) {
+            continue; // Ignore stationary vehicles
+        }
+        
+        // Check if other vehicle is at same T-junction area
+        int otherJunction = findAssociatedTJunction(otherVehicle.currentNodeId);
+        if (otherJunction == associatedJunction) {
+            return true;
+        }
+        
+        // Also check if other vehicle is directly at the T-junction and moving
+        if (otherVehicle.currentNodeId == associatedJunction && 
+            (otherVehicle.state == VehicleState::MOVING || otherVehicle.state == VehicleState::IDLE)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+int VehicleController::findAssociatedTJunction(int nodeId) {
+    const PathNode* node = pathSystem->getNode(nodeId);
+    if (!node) return -1;
+    
+    // If node is already a T-junction, return it
+    if (segmentManager->isTJunction(nodeId)) {
+        return nodeId;
+    }
+    
+    // If it's a waiting node, find connected T-junction
+    if (node->isWaitingNode) {
+        for (int segmentId : node->connectedSegments) {
+            const PathSegment* segment = pathSystem->getSegment(segmentId);
+            if (!segment) continue;
+            
+            int otherNodeId = (segment->startNodeId == nodeId) ? 
+                             segment->endNodeId : segment->startNodeId;
+            
+            if (segmentManager->isTJunction(otherNodeId)) {
+                return otherNodeId;
+            }
+        }
+    }
+    
+    return -1;
+}
+
+bool VehicleController::hasMinimumDistanceToNearbyJunctionVehicles(const Auto& vehicle, float minDistance) {
+    int associatedJunction = findAssociatedTJunction(vehicle.currentNodeId);
+    if (associatedJunction == -1) return true;
+    
+    // Only check distance to vehicles at the same junction
+    for (const Auto& otherVehicle : vehicles) {
+        if (otherVehicle.vehicleId == vehicle.vehicleId) continue;
+        
+        int otherJunction = findAssociatedTJunction(otherVehicle.currentNodeId);
+        if (otherJunction != associatedJunction) continue; // Different junction, ignore
+        
+        float distance = vehicle.position.distanceTo(otherVehicle.position);
+        if (distance < minDistance) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
 bool VehicleController::canMoveWithoutViolatingDistance(const Auto& vehicle, const Point& targetPosition, float minDistance) {
     const PathNode* currentNode = pathSystem->getNode(vehicle.currentNodeId);
     if (!currentNode) return true;
     
-    // Relaxed distance checking for waiting nodes and junctions
-    bool isAtWaitingNode = currentNode->isWaitingNode;
-    bool isNearJunction = segmentManager->isJunctionNode(vehicle.currentNodeId);
+    // Only apply distance checking for vehicles at the same junction
+    int associatedJunction = findAssociatedTJunction(vehicle.currentNodeId);
+    if (associatedJunction == -1) return true; // No junction association, allow movement
     
     for (const Auto& otherVehicle : vehicles) {
         if (otherVehicle.vehicleId == vehicle.vehicleId) continue;
         
+        // Only check against vehicles at the same junction
+        int otherJunction = findAssociatedTJunction(otherVehicle.currentNodeId);
+        if (otherJunction != associatedJunction) continue;
+        
         float distance = targetPosition.distanceTo(otherVehicle.position);
-        
-        // Apply different distance rules based on context
-        float effectiveMinDistance = minDistance;
-        
-        if (isAtWaitingNode || isNearJunction) {
-            // More lenient distance at waiting nodes and junctions
-            effectiveMinDistance = minDistance * 0.6f; // 60 pixels instead of 100
-            
-            // Check if other vehicle is also at waiting node or junction
-            const PathNode* otherCurrentNode = pathSystem->getNode(otherVehicle.currentNodeId);
-            if (otherCurrentNode && (otherCurrentNode->isWaitingNode || segmentManager->isJunctionNode(otherVehicle.currentNodeId))) {
-                effectiveMinDistance = minDistance * 0.4f; // 40 pixels for both at special nodes
-            }
-        }
-        
-        if (distance < effectiveMinDistance) {
+        if (distance < minDistance) {
             return false;
         }
     }

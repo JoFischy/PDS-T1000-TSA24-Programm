@@ -132,8 +132,8 @@ void Renderer::renderDebugInfo(const PathDetector& pathDetector, const PathSyste
 }
 
 void Renderer::renderUI() {
-    // Draw UI background
-    DrawRectangle(10, 10, 280, 350, UI_BACKGROUND_COLOR);
+    // Draw UI background - increased width for node type legend
+    DrawRectangle(10, 10, 320, 420, UI_BACKGROUND_COLOR);
 
     // Draw text information
     int yOffset = 20;
@@ -176,6 +176,26 @@ void Renderer::renderUI() {
     DrawText("4 - Vehicle IDs", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 15;
     DrawText("5 - Debug info", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 20;
+
+    DrawText("Node Types:", 15, yOffset, 14, YELLOW);
+    yOffset += 20;
+
+    // Draw node type legend with colored circles
+    DrawCircle(25, yOffset + 6, 6, NODE_COLOR);
+    DrawText("Blue - Regular nodes (0-1 connections)", 40, yOffset, 10, UI_TEXT_COLOR);
+    yOffset += 15;
+
+    DrawCircle(25, yOffset + 6, 6, CURVE_NODE_COLOR);
+    DrawText("Green - Curve nodes (2 connections)", 40, yOffset, 10, UI_TEXT_COLOR);
+    yOffset += 15;
+
+    DrawCircle(25, yOffset + 6, 6, T_JUNCTION_COLOR);
+    DrawText("Yellow - T-junctions (3+ connections)", 40, yOffset, 10, UI_TEXT_COLOR);
+    yOffset += 15;
+
+    DrawCircle(25, yOffset + 6, 6, WAITING_NODE_COLOR);
+    DrawText("Orange - Waiting nodes", 40, yOffset, 10, UI_TEXT_COLOR);
     yOffset += 20;
 
     DrawText("Vehicle Colors:", 15, yOffset, 14, YELLOW);
@@ -277,23 +297,85 @@ void Renderer::renderNode(const PathNode& node) {
     float nodeRadius = 18.0f / camera.zoom;
     if (nodeRadius < 12.0f) nodeRadius = 12.0f; // Minimum size
 
+    // Determine node type and color
+    Color nodeColor = NODE_COLOR;
+    Color borderColor = BLACK;
+    bool drawSpecialIndicator = false;
+
+    // Check if it's a waiting node
+    if (node.isWaitingNode) {
+        nodeColor = WAITING_NODE_COLOR;
+        borderColor = WAITING_NODE_BORDER_COLOR;
+        drawSpecialIndicator = true;
+    } else {
+        // Check connection count to determine node type
+        int connectionCount = node.connectedSegments.size();
+
+        // Force Node 1 to be curve node regardless of connection count
+        if (node.nodeId == 1) {
+            nodeColor = CURVE_NODE_COLOR;
+            borderColor = CURVE_NODE_BORDER_COLOR;
+        } else if (connectionCount >= 3) {
+            // All junctions with 3+ connections are T-junctions (no crossroads in this system)
+            nodeColor = T_JUNCTION_COLOR;
+            borderColor = T_JUNCTION_BORDER_COLOR;
+            drawSpecialIndicator = true;
+        } else if (connectionCount == 2) {
+            // Curve node
+            nodeColor = CURVE_NODE_COLOR;
+            borderColor = CURVE_NODE_BORDER_COLOR;
+        }
+        // Regular nodes (1 or 0 connections) keep default colors
+    }
+
     // Draw border
-    DrawCircle(node.position.x, node.position.y, nodeRadius + 3, BLACK);
+    DrawCircle(node.position.x, node.position.y, nodeRadius + 3, borderColor);
     // Draw main node
-    DrawCircle(node.position.x, node.position.y, nodeRadius, NODE_COLOR);
+    DrawCircle(node.position.x, node.position.y, nodeRadius, nodeColor);
 
-    // Draw node ID with proper scaling
+    // Draw special indicator for junctions and waiting nodes
+    if (drawSpecialIndicator) {
+        if (node.isWaitingNode) {
+            // Draw diamond shape for waiting nodes
+            float diamondSize = nodeRadius * 0.6f;
+            Vector2 center = {node.position.x, node.position.y};
+            Vector2 points[4] = {
+                {center.x, center.y - diamondSize},  // Top
+                {center.x + diamondSize, center.y},  // Right
+                {center.x, center.y + diamondSize},  // Bottom
+                {center.x - diamondSize, center.y}   // Left
+            };
+
+            for (int i = 0; i < 4; i++) {
+                Vector2 start = points[i];
+                Vector2 end = points[(i + 1) % 4];
+                DrawLineEx(start, end, 2.0f, WHITE);
+            }
+        } else {
+            // Draw cross for junctions
+            float crossSize = nodeRadius * 0.7f;
+            DrawLineEx({node.position.x - crossSize, node.position.y},
+                      {node.position.x + crossSize, node.position.y},
+                      3.0f, WHITE);
+            DrawLineEx({node.position.x, node.position.y - crossSize},
+                      {node.position.x, node.position.y + crossSize},
+                      3.0f, WHITE);
+        }
+    }
+
+    // Draw node ID - keep text in screen space to maintain consistent size and positioning
     std::string nodeText = std::to_string(node.nodeId);
-    Point textPos = worldToScreen(node.position);
+    Point screenPos = worldToScreen(node.position);
 
-    // Scale text size based on zoom level
-    int fontSize = (int)(14 * camera.zoom);
-    if (fontSize < 10) fontSize = 10;
-    if (fontSize > 20) fontSize = 20;
-
-    // Center text on node
+    // Fixed text size independent of zoom
+    int fontSize = 14;
     int textWidth = MeasureText(nodeText.c_str(), fontSize);
-    DrawText(nodeText.c_str(), textPos.x - textWidth/2, textPos.y - fontSize/2, fontSize, WHITE);
+
+    // Center text on node in screen coordinates
+    DrawText(nodeText.c_str(), 
+             screenPos.x - textWidth/2, 
+             screenPos.y - fontSize/2, 
+             fontSize, WHITE);
 }
 
 void Renderer::renderSegment(const PathSegment& segment, const PathSystem& pathSystem) {
@@ -524,6 +606,16 @@ const Color Renderer::INTERSECTION_COLOR = {255, 100, 200, 255};
 const Color Renderer::UI_BACKGROUND_COLOR = {20, 20, 20, 220};
 const Color Renderer::UI_TEXT_COLOR = {255, 255, 255, 255};
 const Color Renderer::PICKER_COLOR = {0, 255, 100, 255};
+
+// Node type colors
+const Color Renderer::WAITING_NODE_COLOR = {255, 150, 0, 255};        // Orange for waiting nodes
+const Color Renderer::WAITING_NODE_BORDER_COLOR = {200, 100, 0, 255}; // Dark orange border
+const Color Renderer::T_JUNCTION_COLOR = {255, 255, 0, 255};          // Yellow for T-junctions
+const Color Renderer::T_JUNCTION_BORDER_COLOR = {200, 200, 0, 255};   // Dark yellow border
+const Color Renderer::CROSSROAD_COLOR = {255, 0, 0, 255};             // Red for crossroads (4+ connections)
+const Color Renderer::CROSSROAD_BORDER_COLOR = {200, 0, 0, 255};      // Dark red border
+const Color Renderer::CURVE_NODE_COLOR = {0, 255, 150, 255};          // Green for curve nodes
+const Color Renderer::CURVE_NODE_BORDER_COLOR = {0, 200, 100, 255};   // Dark green border
 
 // Vehicle color arrays
 const Color Renderer::VEHICLE_COLORS[] = {
