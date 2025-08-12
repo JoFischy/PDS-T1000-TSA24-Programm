@@ -363,7 +363,61 @@ void Simulation::createFactoryPathSystem() {
     int node12 = pathSystem.addNode(985, 1135);   // Node 12
     int node13 = pathSystem.addNode(1860, 1135);  // Node 13
 
-    // Connect nodes according to specification
+    // Add warehouse points
+    int warehouse1 = pathSystem.addNode(350, 205);  // Warehouse 1
+    int warehouse2 = pathSystem.addNode(505, 965);  // Warehouse 2  
+    int warehouse3 = pathSystem.addNode(1410, 475); // Warehouse 3
+
+    // Add waiting points at T-junctions (150 pixel distance in all directions)
+    // T-junction at Node 2 (640, 65) - has connections: left, bottom, right
+    int wait2_left = pathSystem.addWaitingNode(640 - 150, 65);     // Left wait point
+    int wait2_bottom = pathSystem.addWaitingNode(640, 65 + 150);   // Bottom wait point
+    // Merged waiting point between Node 2 and Node 3 (x = (640+985)/2 = 812.5)
+    int wait2_3_merged = pathSystem.addWaitingNode(812, 65);       // Merged waiting point
+
+    // T-junction at Node 3 (985, 65) - has 3 connections  
+    int wait3_east = pathSystem.addWaitingNode(985 + 150, 65);     // East wait point
+
+    // T-junction at Node 5 (70, 470) - add missing waiting points
+    int wait5_top = pathSystem.addWaitingNode(70, 470 - 150);      // Top wait point
+    int wait5_right = pathSystem.addWaitingNode(70 + 150, 470);    // Right wait point
+    int wait5_bottom = pathSystem.addWaitingNode(70, 470 + 150);   // Bottom wait point
+
+    // Node 6 (640, 470) - regular junction, no waiting points needed
+
+    // T-junction at Node 7 (985, 320) - has 3 connections
+    // Single waiting point between Node 3 and Node 7 (y = (65+320)/2 = 192.5)
+    int wait3_7_merged = pathSystem.addWaitingNode(985, 192);      // Single waiting point between Node 3 and 7
+    int wait7_east = pathSystem.addWaitingNode(985 + 150, 320);    // East wait point  
+    // Merged south point between Node 7 and Node 9 (y = (320+750)/2 = 535)
+    int wait7_south_merged = pathSystem.addWaitingNode(985, 535);  // Merged south wait point
+
+    // T-junction at Node 8 (1860, 320) - has 2 connections (no north waiting point)
+    int wait8_west = pathSystem.addWaitingNode(1860 - 150, 320);   // West wait point
+    int wait8_south = pathSystem.addWaitingNode(1860, 320 + 150);  // South wait point
+
+    // T-junction at Node 9 (985, 750) - has 3 connections
+    // Uses merged points from Node 7
+    int wait9_east = pathSystem.addWaitingNode(985 + 150, 750);    // East wait point
+    // Merged south point between Node 9 and Node 12 (y = (750+1135)/2 = 942.5)
+    int wait9_south_merged = pathSystem.addWaitingNode(985, 942);  // Merged south wait point
+
+    // Waiting point at warehouse2_access (505, 1135) 
+    int wait11_left = pathSystem.addWaitingNode(505 - 150, 1135);  // Left wait point
+    int wait11_right = pathSystem.addWaitingNode(505 + 150, 1135); // Right wait point
+
+    // T-junction at Node 12 (985, 1135) - has 3 connections
+    // Uses merged point from Node 9
+    int wait12_east = pathSystem.addWaitingNode(985 + 150, 1135);  // East wait point
+    int wait12_west = pathSystem.addWaitingNode(985 - 150, 1135);  // West wait point
+
+    // T-junction at Node 13 (1860, 1135) - add missing waiting points
+    // Merged waiting point between Node 10 and Node 13 (y = (750+1135)/2 = 942.5)
+    int wait10_13_merged = pathSystem.addWaitingNode(1860, 942);   // Merged waiting point between Node 10 and 13
+    int wait13_left = pathSystem.addWaitingNode(1860 - 150, 1135); // Left wait point
+    int wait13_bottom = pathSystem.addWaitingNode(1860, 1135 + 150); // Bottom wait point
+
+    // Connect main nodes according to specification
     // Node 1 connections: 2, 5
     pathSystem.addSegment(node1, node2);
     pathSystem.addSegment(node1, node5);
@@ -385,31 +439,98 @@ void Simulation::createFactoryPathSystem() {
 
     // Node 6 connections: 2, 5 (already connected above)
 
-    // Node 7 connections: 3, 8, 9 (3 already connected above)
+    // Node 7 connections: 3, 6, 8, 9 (3,6 already connected above)
     pathSystem.addSegment(node7, node8);
     pathSystem.addSegment(node7, node9);
 
-    // Node 8 connections: 4, 7, 10 (4, 7 already connected above)
+    // Node 8 connections: 4, 7, 10 (4,7 already connected above)
     pathSystem.addSegment(node8, node10);
 
     // Node 9 connections: 7, 10, 12 (7 already connected above)
     pathSystem.addSegment(node9, node10);
     pathSystem.addSegment(node9, node12);
 
-    // Node 10 connections: 8, 9, 13 (8, 9 already connected above)
+    // Node 10 connections: 8, 9, 13 (8,9 already connected above)
     pathSystem.addSegment(node10, node13);
 
     // Node 11 connections: 5, 12 (5 already connected above)
     pathSystem.addSegment(node11, node12);
 
-    // Node 12 connections: 9, 11, 13 (9, 11 already connected above)
+    // Node 12 connections: 9, 11, 13 (9,11 already connected above)
     pathSystem.addSegment(node12, node13);
 
     // Node 13 connections: 10, 12 (already connected above)
 
-    std::cout << "Created factory path system with predefined coordinates:" << std::endl;
-    std::cout << "13 nodes and " << pathSystem.getSegmentCount() << " segments" << std::endl;
+    // Connect warehouses to nearby paths
+    // Warehouse 1 (350, 205) - connect to path between node1-node2
+    int warehouse1_access = pathSystem.addNode(350, 65);    // Access point on main path
+    pathSystem.addSegment(warehouse1_access, warehouse1);
+    // Insert access point into main path
+    pathSystem.addSegment(node1, warehouse1_access);
+    pathSystem.addSegment(warehouse1_access, node2);
 
-    // Center camera on the factory layout (roughly in the middle)
-    renderer->setCameraTarget(965, 600);
+    // Warehouse 2 (505, 965) - connect to path near node9/node12
+    int warehouse2_access = pathSystem.addNode(505, 1135);  // Access point on node12 level
+    pathSystem.addSegment(warehouse2_access, warehouse2);
+    pathSystem.addSegment(node12, warehouse2_access);
+
+    // Warehouse 3 (1410, 475) - connect to path between node7-node8  
+    int warehouse3_access = pathSystem.addNode(1410, 320);  // Access point on main path
+    pathSystem.addSegment(warehouse3_access, warehouse3);
+    pathSystem.addSegment(node7, warehouse3_access);
+    pathSystem.addSegment(warehouse3_access, node8);
+
+    // Connect waiting points to T-junctions
+    // Node 2 waiting points 
+    pathSystem.addSegment(node2, wait2_left);
+    pathSystem.addSegment(node2, wait2_bottom);  
+    pathSystem.addSegment(node2, wait2_3_merged);
+    
+    // Node 3 waiting points
+    pathSystem.addSegment(node3, wait2_3_merged);  // Connect to merged point
+    pathSystem.addSegment(node3, wait3_east);
+    pathSystem.addSegment(node3, wait3_7_merged);  // Connect to single waiting point
+
+    // Node 5 waiting points
+    pathSystem.addSegment(node5, wait5_top);
+    pathSystem.addSegment(node5, wait5_right);
+    pathSystem.addSegment(node5, wait5_bottom);
+
+    // Node 6 has no waiting points (regular junction)
+
+    // Node 7 waiting points (using merged points)
+    pathSystem.addSegment(node7, wait3_7_merged);  // Connect to single waiting point
+    pathSystem.addSegment(node7, wait7_east);
+    pathSystem.addSegment(node7, wait7_south_merged);
+    // Also connect merged point to Node 9
+    pathSystem.addSegment(node9, wait7_south_merged);
+
+    // Node 8 waiting points (no north waiting point)
+    pathSystem.addSegment(node8, wait8_west);
+    pathSystem.addSegment(node8, wait8_south);
+
+    // Node 9 waiting points (using merged points)
+    pathSystem.addSegment(node9, wait9_east);
+    pathSystem.addSegment(node9, wait9_south_merged);
+    // Also connect merged point to Node 12
+    pathSystem.addSegment(node12, wait9_south_merged);
+
+    // Warehouse2_access waiting points (505, 1135)
+    pathSystem.addSegment(warehouse2_access, wait11_left);
+    pathSystem.addSegment(warehouse2_access, wait11_right);
+
+    // Node 12 waiting points (using merged point)
+    pathSystem.addSegment(node12, wait12_east);
+    pathSystem.addSegment(node12, wait12_west);
+
+    // Node 13 waiting points (using merged point)
+    pathSystem.addSegment(node13, wait10_13_merged);
+    pathSystem.addSegment(node13, wait13_left);
+    pathSystem.addSegment(node13, wait13_bottom);
+    // Connect merged point to Node 10
+    pathSystem.addSegment(node10, wait10_13_merged);
+
+    std::cout << "Factory path system created with " << pathSystem.getNodeCount() << " nodes and " 
+              << pathSystem.getSegmentCount() << " segments" << std::endl;
+    std::cout << "Added 3 warehouse points and waiting points at all T-junctions" << std::endl;
 }

@@ -35,7 +35,7 @@ public:
     int pendingTargetNodeId; // For two-stage routing
     float size;
     int vehicleId;
-    bool isWaitingAtSafetyStop;
+    // Removed safety stop system
 
     // Constructors
     Auto();

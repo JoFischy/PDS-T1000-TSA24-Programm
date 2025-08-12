@@ -7,9 +7,10 @@ struct PathNode {
     int nodeId;
     Point position;
     std::vector<int> connectedSegments;
+    bool isWaitingNode;
     
-    PathNode() : nodeId(-1) {}
-    PathNode(int id, float x, float y) : nodeId(id), position(x, y) {}
+    PathNode() : nodeId(-1), isWaitingNode(false) {}
+    PathNode(int id, float x, float y, bool isWaiting = false) : nodeId(id), position(x, y), isWaitingNode(isWaiting) {}
 };
 
 struct PathSegment {
@@ -34,6 +35,7 @@ public:
     
     // Node management
     int addNode(float x, float y);
+    int addWaitingNode(float x, float y);
     PathNode* getNode(int nodeId);
     const PathNode* getNode(int nodeId) const;
     

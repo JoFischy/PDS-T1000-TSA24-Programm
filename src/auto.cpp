@@ -17,7 +17,7 @@ Auto::Auto(const Point& startPos, Direction dir)
 
 Auto::Auto(int id, const Point& startPos) 
     : vehicleId(id), position(startPos), currentNodeId(-1), targetNodeId(-1), pendingTargetNodeId(-1),
-      currentSegmentIndex(0), speed(50.0f), state(VehicleState::IDLE), isWaitingAtSafetyStop(false) {}
+      currentSegmentIndex(0), speed(50.0f), state(VehicleState::IDLE) {}
 
 void Auto::setPosition(const Point& pos) {
     position = pos;

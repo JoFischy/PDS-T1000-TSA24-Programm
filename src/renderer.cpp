@@ -3,46 +3,6 @@
 #include <sstream>
 #include <iostream>
 
-// Static color definitions
-const Color Renderer::NODE_COLOR = {70, 130, 255, 255};
-const Color Renderer::SEGMENT_COLOR = {150, 150, 150, 255};
-const Color Renderer::OCCUPIED_SEGMENT_COLOR = {200, 50, 200, 255}; // Purple for blocked segments
-const Color Renderer::VEHICLE_COLOR = {255, 220, 60, 255};
-const Color Renderer::INTERSECTION_COLOR = {255, 100, 200, 255};
-const Color Renderer::UI_BACKGROUND_COLOR = {20, 20, 20, 220};
-const Color Renderer::UI_TEXT_COLOR = {255, 255, 255, 255};
-const Color Renderer::PICKER_COLOR = {0, 255, 100, 255};
-
-// Vehicle color palette - bright colors for vehicles and routes
-const Color Renderer::VEHICLE_COLORS[] = {
-    {255, 80, 80, 255},   // Bright Red
-    {80, 255, 80, 255},   // Bright Green  
-    {80, 80, 255, 255},   // Bright Blue
-    {255, 255, 80, 255},  // Bright Yellow
-    {255, 80, 255, 255},  // Bright Magenta
-    {80, 255, 255, 255},  // Bright Cyan
-    {255, 150, 80, 255},  // Bright Orange
-    {150, 80, 255, 255},  // Bright Purple
-    {255, 80, 150, 255},  // Bright Pink
-    {150, 255, 80, 255}   // Bright Lime
-};
-
-// Waiting colors - dimmed versions of vehicle colors
-const Color Renderer::WAITING_COLORS[] = {
-    {180, 60, 60, 255},   // Dimmed Red
-    {60, 180, 60, 255},   // Dimmed Green
-    {60, 60, 180, 255},   // Dimmed Blue
-    {180, 180, 60, 255},  // Dimmed Yellow
-    {180, 60, 180, 255},  // Dimmed Magenta
-    {60, 180, 180, 255},  // Dimmed Cyan
-    {180, 120, 60, 255},  // Dimmed Orange
-    {120, 60, 180, 255},  // Dimmed Purple
-    {180, 60, 120, 255},  // Dimmed Pink
-    {120, 180, 60, 255}   // Dimmed Lime
-};
-
-const int Renderer::NUM_VEHICLE_COLORS = 10;
-
 Renderer::Renderer() 
     : hasBackgroundImage(false), showNodes(true), showSegments(true), 
       showIntersections(true), showVehicleIds(false), showDebugInfo(false),
@@ -361,7 +321,7 @@ void Renderer::renderVehicle(const Auto& vehicle) {
     // Get vehicle's unique color
     Color baseColor = VEHICLE_COLORS[vehicle.vehicleId % NUM_VEHICLE_COLORS];
     Color vehicleColor;
-    
+
     // Determine color based on state
     switch (vehicle.state) {
         case VehicleState::WAITING:
@@ -403,7 +363,7 @@ void Renderer::renderVehicle(const Auto& vehicle) {
     DrawTextEx(GetFontDefault(), idText.c_str(), textPos, textSize, 1, WHITE);
 
     // Draw waiting indicator if waiting at safety stop
-    if (vehicle.isWaitingAtSafetyStop) {
+    if (vehicle.state == VehicleState::WAITING) {
         float indicatorSize = vehicleSize * 1.8f;
         DrawCircleLinesV(pos, indicatorSize, vehicleColor);
         DrawCircleLinesV(pos, indicatorSize + 3, {255, 255, 255, 150});
@@ -461,7 +421,7 @@ void Renderer::renderVehicleRoute(const Auto& vehicle, const VehicleController& 
     // Use same color as vehicle but with transparency for route
     Color baseColor = VEHICLE_COLORS[vehicle.vehicleId % NUM_VEHICLE_COLORS];
     Color routeColor = {baseColor.r, baseColor.g, baseColor.b, 160}; // Semi-transparent
-    
+
     float routeThickness = 6.0f / camera.zoom;
     if (routeThickness < 3.0f) routeThickness = 3.0f;
 
@@ -555,3 +515,41 @@ void Renderer::drawVehicleRoutes(const VehicleController& vehicleController, con
         }
     }
 }
+
+// Static color definitions - placed at end to avoid compilation issues
+const Color Renderer::NODE_COLOR = {70, 130, 255, 255};
+const Color Renderer::SEGMENT_COLOR = {150, 150, 150, 255};
+const Color Renderer::OCCUPIED_SEGMENT_COLOR = {200, 50, 200, 255};
+const Color Renderer::INTERSECTION_COLOR = {255, 100, 200, 255};
+const Color Renderer::UI_BACKGROUND_COLOR = {20, 20, 20, 220};
+const Color Renderer::UI_TEXT_COLOR = {255, 255, 255, 255};
+const Color Renderer::PICKER_COLOR = {0, 255, 100, 255};
+
+// Vehicle color arrays
+const Color Renderer::VEHICLE_COLORS[] = {
+    {255, 80, 80, 255},   // Bright Red
+    {80, 255, 80, 255},   // Bright Green  
+    {80, 80, 255, 255},   // Bright Blue
+    {255, 255, 80, 255},  // Bright Yellow
+    {255, 80, 255, 255},  // Bright Magenta
+    {80, 255, 255, 255},  // Bright Cyan
+    {255, 150, 80, 255},  // Bright Orange
+    {150, 80, 255, 255},  // Bright Purple
+    {255, 80, 150, 255},  // Bright Pink
+    {150, 255, 80, 255}   // Bright Lime
+};
+
+const Color Renderer::WAITING_COLORS[] = {
+    {180, 60, 60, 255},   // Dimmed Red
+    {60, 180, 60, 255},   // Dimmed Green
+    {60, 60, 180, 255},   // Dimmed Blue
+    {180, 180, 60, 255},  // Dimmed Yellow
+    {180, 60, 180, 255},  // Dimmed Magenta
+    {60, 180, 180, 255},  // Dimmed Cyan
+    {180, 120, 60, 255},  // Dimmed Orange
+    {120, 60, 180, 255},  // Dimmed Purple
+    {180, 60, 120, 255},  // Dimmed Pink
+    {120, 180, 60, 255}   // Dimmed Lime
+};
+
+const int Renderer::NUM_VEHICLE_COLORS = 10;

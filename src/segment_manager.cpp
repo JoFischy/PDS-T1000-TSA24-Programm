@@ -301,26 +301,10 @@ float SegmentManager::estimateWaitTime(int segmentId, int vehicleId) const {
 }
 
 bool SegmentManager::shouldWaitOrReroute(int currentNodeId, int targetNodeId, int blockedSegmentId, int vehicleId) const {
-    // Check if this is a T-junction deadlock situation
-    if (isTJunction(currentNodeId)) {
-        const PathSegment* blockedSegment = pathSystem->getSegment(blockedSegmentId);
-        if (blockedSegment && blockedSegment->isOccupied) {
-            int otherVehicleId = blockedSegment->occupiedByVehicleId;
-            
-            if (isDeadlockSituation(currentNodeId, vehicleId, otherVehicleId)) {
-                // Try evasion route first
-                if (canUseEvasionRoute(currentNodeId, targetNodeId, blockedSegmentId, vehicleId)) {
-                    std::cout << "Vehicle " << vehicleId << " using T-junction evasion route" << std::endl;
-                    return false; // Use evasion route instead of waiting
-                }
-            }
-        }
-    }
-    
-    // Calculate wait time for blocked segment
+    // Simple decision: calculate wait time vs alternative path time
     float waitTime = estimateWaitTime(blockedSegmentId, vehicleId);
     
-    // Find alternative path
+    // Find alternative path using waiting points
     std::vector<int> altPath = findAvailablePath(currentNodeId, targetNodeId, vehicleId);
     
     if (altPath.empty()) {
