@@ -9,7 +9,8 @@ enum class Direction {
     NORTH = 0,
     EAST = 90,
     SOUTH = 180,
-    WEST = 270
+    WEST = 270,
+    UNKNOWN = -1
 };
 
 // Abstract interface for movement commands

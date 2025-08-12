@@ -392,9 +392,11 @@ void Simulation::createFactoryPathSystem() {
     // Merged south point between Node 7 and Node 9 (y = (320+750)/2 = 535)
     int wait7_south_merged = pathSystem.addWaitingNode(985, 535);  // Merged south wait point
 
-    // T-junction at Node 8 (1860, 320) - has 2 connections (no north waiting point)
+    // T-junction at Node 8 (1860, 320) - has 3 connections
     int wait8_west = pathSystem.addWaitingNode(1860 - 150, 320);   // West wait point
-    int wait8_south = pathSystem.addWaitingNode(1860, 320 + 150);  // South wait point
+    // No south waiting point - using shared upper waiting node from Node 10
+    // Merged north-south point between Node 8 and Node 10 (y = (320+750)/2 = 535)
+    int wait8_10_merged = pathSystem.addWaitingNode(1860, 535);    // Merged north-south wait point
 
     // T-junction at Node 9 (985, 750) - has 3 connections
     // Uses merged points from Node 7
@@ -411,11 +413,12 @@ void Simulation::createFactoryPathSystem() {
     int wait12_east = pathSystem.addWaitingNode(985 + 150, 1135);  // East wait point
     int wait12_west = pathSystem.addWaitingNode(985 - 150, 1135);  // West wait point
 
-    // T-junction at Node 13 (1860, 1135) - add missing waiting points
-    // Merged waiting point between Node 10 and Node 13 (y = (750+1135)/2 = 942.5)
-    int wait10_13_merged = pathSystem.addWaitingNode(1860, 942);   // Merged waiting point between Node 10 and 13
-    int wait13_left = pathSystem.addWaitingNode(1860 - 150, 1135); // Left wait point
-    int wait13_bottom = pathSystem.addWaitingNode(1860, 1135 + 150); // Bottom wait point
+    // T-junction at Node 10 (1860, 750) - has 3 connections
+    // Uses merged point from Node 8 (wait8_10_merged) for north direction
+    int wait10_left = pathSystem.addWaitingNode(1860 - 150, 750);  // Left wait point
+    int wait10_bottom = pathSystem.addWaitingNode(1860, 750 + 150); // Bottom wait point
+
+    // Node 13 (1860, 1135) - no waiting points (reverted)
 
     // Connect main nodes according to specification
     // Node 1 connections: 2, 5
@@ -505,9 +508,9 @@ void Simulation::createFactoryPathSystem() {
     // Also connect merged point to Node 9
     pathSystem.addSegment(node9, wait7_south_merged);
 
-    // Node 8 waiting points (no north waiting point)
+    // Node 8 waiting points
     pathSystem.addSegment(node8, wait8_west);
-    pathSystem.addSegment(node8, wait8_south);
+    pathSystem.addSegment(node8, wait8_10_merged);
 
     // Node 9 waiting points (using merged points)
     pathSystem.addSegment(node9, wait9_east);
@@ -523,12 +526,12 @@ void Simulation::createFactoryPathSystem() {
     pathSystem.addSegment(node12, wait12_east);
     pathSystem.addSegment(node12, wait12_west);
 
-    // Node 13 waiting points (using merged point)
-    pathSystem.addSegment(node13, wait10_13_merged);
-    pathSystem.addSegment(node13, wait13_left);
-    pathSystem.addSegment(node13, wait13_bottom);
-    // Connect merged point to Node 10
-    pathSystem.addSegment(node10, wait10_13_merged);
+    // Node 10 waiting points (using merged point from Node 8)
+    pathSystem.addSegment(node10, wait8_10_merged);  // Connect to merged point with Node 8
+    pathSystem.addSegment(node10, wait10_left);
+    pathSystem.addSegment(node10, wait10_bottom);
+
+    // Node 13 has no waiting points (reverted)
 
     std::cout << "Factory path system created with " << pathSystem.getNodeCount() << " nodes and " 
               << pathSystem.getSegmentCount() << " segments" << std::endl;

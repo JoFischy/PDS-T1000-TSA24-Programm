@@ -7,9 +7,11 @@
 !include/
 !include/**
 
+
 # Also track essential project files
 !README.md
 !.gitignore
+!factory_layout.png
 
 # Ignore build artifacts even in tracked directories
 *.exe
