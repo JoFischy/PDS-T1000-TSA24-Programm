@@ -1,8 +1,10 @@
+
 #include "path_system.h"
 #include <algorithm>
 #include <queue>
 #include <unordered_set>
 #include <limits>
+#include <iostream>
 
 PathSystem::PathSystem() : nextNodeId(0), nextSegmentId(0) {}
 
@@ -38,16 +40,19 @@ int PathSystem::addSegment(int startNodeId, int endNodeId) {
 
     if (!startNode || !endNode) return -1;
 
-    // Calculate length
+    // Berechne Länge
     float length = calculateDistance(startNode->position, endNode->position);
 
     PathSegment segment(nextSegmentId, startNodeId, endNodeId, length);
     segments.push_back(segment);
     segmentIdToIndex[nextSegmentId] = segments.size() - 1;
 
-    // Connect nodes to segment
+    // Verbinde Knoten mit Segment
     connectNodeToSegment(startNodeId, nextSegmentId);
     connectNodeToSegment(endNodeId, nextSegmentId);
+
+    std::cout << "Segment " << nextSegmentId << " erstellt zwischen Knoten " 
+              << startNodeId << " und " << endNodeId << std::endl;
 
     return nextSegmentId++;
 }
@@ -84,10 +89,10 @@ std::vector<int> PathSystem::findPath(int startNodeId, int endNodeId,
 
     if (startNodeId == endNodeId) return path;
 
-    // Create set of excluded segments for fast lookup
+    // Erstelle Set der ausgeschlossenen Segmente
     std::unordered_set<int> excludedSet(excludedSegments.begin(), excludedSegments.end());
 
-    // Dijkstra's algorithm
+    // Dijkstra-Algorithmus
     std::unordered_map<int, float> distances;
     std::unordered_map<int, int> previous;
     std::unordered_map<int, int> previousSegment;
@@ -95,7 +100,7 @@ std::vector<int> PathSystem::findPath(int startNodeId, int endNodeId,
                        std::vector<std::pair<float, int>>, 
                        std::greater<std::pair<float, int>>> pq;
 
-    // Initialize distances
+    // Initialisiere Distanzen
     for (const auto& node : nodes) {
         distances[node.nodeId] = std::numeric_limits<float>::infinity();
     }
@@ -114,13 +119,13 @@ std::vector<int> PathSystem::findPath(int startNodeId, int endNodeId,
         if (!node) continue;
 
         for (int segmentId : node->connectedSegments) {
-            // Skip excluded segments
+            // Überspringe ausgeschlossene Segmente
             if (excludedSet.count(segmentId)) continue;
 
             const PathSegment* segment = getSegment(segmentId);
             if (!segment) continue;
 
-            // Find the other node
+            // Finde anderen Knoten
             int otherNode = (segment->startNodeId == currentNode) ? 
                            segment->endNodeId : segment->startNodeId;
 
@@ -135,9 +140,10 @@ std::vector<int> PathSystem::findPath(int startNodeId, int endNodeId,
         }
     }
 
-    // Reconstruct path (as segment IDs)
+    // Rekonstruiere Pfad (als Segment-IDs)
     if (distances[endNodeId] == std::numeric_limits<float>::infinity()) {
-        return path; // No path found
+        std::cout << "Kein Pfad gefunden von Knoten " << startNodeId << " zu " << endNodeId << std::endl;
+        return path;
     }
 
     int current = endNodeId;
@@ -148,6 +154,10 @@ std::vector<int> PathSystem::findPath(int startNodeId, int endNodeId,
     }
 
     std::reverse(path.begin(), path.end());
+    
+    std::cout << "Pfad gefunden von Knoten " << startNodeId << " zu " << endNodeId 
+              << " mit " << path.size() << " Segmenten" << std::endl;
+    
     return path;
 }
 
@@ -156,7 +166,7 @@ std::vector<Point> PathSystem::getPathPoints(const std::vector<int>& segmentIds)
 
     if (segmentIds.empty()) return points;
 
-    // Add start point of first segment
+    // Füge Startpunkt des ersten Segments hinzu
     const PathSegment* firstSegment = getSegment(segmentIds[0]);
     if (!firstSegment) return points;
 
@@ -165,7 +175,7 @@ std::vector<Point> PathSystem::getPathPoints(const std::vector<int>& segmentIds)
         points.push_back(startNode->position);
     }
 
-    // Add end points of all segments
+    // Füge Endpunkte aller Segmente hinzu
     for (int segmentId : segmentIds) {
         const PathSegment* segment = getSegment(segmentId);
         if (!segment) continue;

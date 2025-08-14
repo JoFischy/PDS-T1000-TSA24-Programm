@@ -2,11 +2,12 @@
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <vector>
 
-Renderer::Renderer() 
+Renderer::Renderer(int width, int height) 
     : hasBackgroundImage(false), showNodes(true), showSegments(true), 
       showIntersections(true), showVehicleIds(false), showDebugInfo(false),
-      windowWidth(0), windowHeight(0), isInitialized(false),
+      windowWidth(width), windowHeight(height), isInitialized(false),
       coordinatePickerEnabled(false), pickerPosition(100, 100), 
       isDraggingPicker(false), pickerRadius(15.0f),
       offset({0, 0}), scale(1.0f) {
@@ -22,19 +23,29 @@ Renderer::~Renderer() {
 }
 
 bool Renderer::initialize(int windowWidth, int windowHeight, const char* title) {
-    this->windowWidth = windowWidth;
-    this->windowHeight = windowHeight;
-
+    // Ermittle Monitor-Auflösung vor der Fenster-Erstellung
     InitWindow(windowWidth, windowHeight, title);
+    
+    // Sofortiger Wechsel zu Vollbild nach Fenster-Erstellung
+    ToggleFullscreen();
     SetTargetFPS(60);
 
-    // Initialize camera
-    camera.target = {0, 0};
-    camera.offset = {windowWidth / 2.0f, windowHeight / 2.0f};
+    // Nach Vollbild-Wechsel: Hole tatsächliche Bildschirm-Dimensionen
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    // Aktualisiere interne Dimensionen
+    this->windowWidth = screenWidth;
+    this->windowHeight = screenHeight;
+
+    // Initialize camera für Vollbild - starte in der Bildmitte
+    camera.target = {960, 600}; // Mitte des 1920x1200 Hintergrundbildes
+    camera.offset = {screenWidth / 2.0f, screenHeight / 2.0f};
     camera.rotation = 0.0f;
-    camera.zoom = 1.0f;
+    camera.zoom = 1.0f; // Starte mit normalem Zoom
 
     isInitialized = true;
+    std::cout << "Fullscreen mode activated: " << screenWidth << "x" << screenHeight << std::endl;
     return true;
 }
 
@@ -133,12 +144,32 @@ void Renderer::renderDebugInfo(const PathDetector& pathDetector, const PathSyste
 
 void Renderer::renderUI() {
     // Draw UI background - increased width for node type legend
-    DrawRectangle(10, 10, 320, 420, UI_BACKGROUND_COLOR);
+    DrawRectangle(10, 10, 320, 450, UI_BACKGROUND_COLOR);
+
+    // Camera info
+    char cameraInfo[128];
+    snprintf(cameraInfo, sizeof(cameraInfo), "Camera: (%.0f, %.0f) Zoom: %.2f", 
+             camera.target.x, camera.target.y, camera.zoom);
+    DrawText(cameraInfo, 15, 15, 14, LIGHTGRAY);
 
     // Draw text information
-    int yOffset = 20;
+    int yOffset = 35;
     DrawText("Factory Vehicle Simulation", 15, yOffset, 16, UI_TEXT_COLOR);
     yOffset += 25;
+
+    // Camera controls
+    DrawText("Camera Controls:", 15, yOffset, 14, YELLOW);
+    yOffset += 20;
+    DrawText("WASD - Move camera", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("Mouse wheel - Zoom", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("F - Fit to view", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("R - Reset camera", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("F11 - Toggle fullscreen", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 20;
 
     DrawText("Vehicle Selection:", 15, yOffset, 14, YELLOW);
     yOffset += 20;
@@ -216,7 +247,7 @@ void Renderer::renderUI() {
     if (coordinatePickerEnabled) {
         DrawText("Coordinate Picker:", 15, yOffset, 14, GREEN);
         yOffset += 20;
-        std::string coordText = "X: " + std::to_string((int)pickerPosition.x) + 
+        std::string coordText = "X: " + std::to_string((int)pickerPosition.x) +
                                ", Y: " + std::to_string((int)pickerPosition.y);
         DrawText(coordText.c_str(), 15, yOffset, 12, GREEN);
         yOffset += 15;
@@ -228,6 +259,21 @@ void Renderer::updateCamera() {
     // Update coordinate picker first
     if (coordinatePickerEnabled) {
         updateCoordinatePicker();
+    }
+
+    // WASD camera movement
+    float moveSpeed = 500.0f / camera.zoom; // Erhöhte Bewegungsgeschwindigkeit
+    bool moved = false;
+    if (IsKeyDown(KEY_W)) { camera.target.y -= moveSpeed * GetFrameTime(); moved = true; }
+    if (IsKeyDown(KEY_S)) { camera.target.y += moveSpeed * GetFrameTime(); moved = true; }
+    if (IsKeyDown(KEY_A)) { camera.target.x -= moveSpeed * GetFrameTime(); moved = true; }
+    if (IsKeyDown(KEY_D)) { camera.target.x += moveSpeed * GetFrameTime(); moved = true; }
+    
+    static float debugTimer = 0;
+    debugTimer += GetFrameTime();
+    if (moved && debugTimer > 0.5f) { // Häufigere Debug-Ausgabe
+        std::cout << "Camera moved to: (" << camera.target.x << ", " << camera.target.y << ") zoom=" << camera.zoom << std::endl;
+        debugTimer = 0;
     }
 
     // Zoom with mouse wheel
@@ -268,6 +314,45 @@ void Renderer::resetCamera() {
         camera.target = {0, 0};
     }
     camera.zoom = 1.0f;
+}
+
+void Renderer::fitToView() {
+    if (hasBackgroundImage) {
+        // Berechne den Zoom-Faktor, um das gesamte Bild anzuzeigen
+        // Verwende aktuelle Bildschirmauflösung
+        int currentScreenWidth = GetScreenWidth();
+        int currentScreenHeight = GetScreenHeight();
+        
+        float zoomX = (float)currentScreenWidth / backgroundTexture.width;
+        float zoomY = (float)currentScreenHeight / backgroundTexture.height;
+        camera.zoom = (zoomX < zoomY) ? zoomX : zoomY;
+        
+        // Zentriere das Bild
+        camera.target = {backgroundTexture.width / 2.0f, backgroundTexture.height / 2.0f};
+        
+        std::cout << "Fit to view: screen=" << currentScreenWidth << "x" << currentScreenHeight 
+                  << ", zoom=" << camera.zoom << ", target=(" 
+                  << camera.target.x << "," << camera.target.y << ")" << std::endl;
+    }
+}
+
+void Renderer::toggleFullscreen() {
+    if (IsWindowFullscreen()) {
+        // Verlasse Vollbildmodus
+        ToggleFullscreen();
+        SetWindowSize(windowWidth, windowHeight);
+        camera.offset = {windowWidth / 2.0f, windowHeight / 2.0f};
+        std::cout << "Exited fullscreen mode (" << windowWidth << "x" << windowHeight << ")" << std::endl;
+    } else {
+        // Wechsle zu Vollbildmodus
+        int monitor = GetCurrentMonitor();
+        int monitorWidth = GetMonitorWidth(monitor);
+        int monitorHeight = GetMonitorHeight(monitor);
+        
+        ToggleFullscreen();
+        camera.offset = {monitorWidth / 2.0f, monitorHeight / 2.0f};
+        std::cout << "Entered fullscreen mode (" << monitorWidth << "x" << monitorHeight << ")" << std::endl;
+    }
 }
 
 Point Renderer::screenToWorld(const Point& screenPos) const {

@@ -2,6 +2,7 @@
 #include "point.h"
 #include <vector>
 #include <unordered_map>
+#include <memory>
 
 struct PathNode {
     int nodeId;

@@ -6,7 +6,7 @@
 Simulation::Simulation() 
     : segmentManager(nullptr), vehicleController(nullptr), renderer(nullptr),
       isRunning(false), isPaused(false), isInitialized(false), spawnTimer(0.0f),
-      vehicleSpawnRate(DEFAULT_SPAWN_RATE), defaultVehicleSpeed(DEFAULT_VEHICLE_SPEED) {}
+      vehicleSpawnRate(2.0f), defaultVehicleSpeed(100.0f) {}
 
 Simulation::~Simulation() {
     cleanup();
@@ -14,20 +14,30 @@ Simulation::~Simulation() {
 
 bool Simulation::initialize(const char* factoryImagePath) {
     // Initialize renderer
-    renderer = new Renderer();
-    if (!renderer->initialize(WINDOW_WIDTH, WINDOW_HEIGHT, "Factory Vehicle Simulation")) {
+    renderer = new Renderer(1200, 800);
+    if (!renderer) {
         std::cerr << "Failed to initialize renderer" << std::endl;
         return false;
     }
+
+    // Initialize window
+    if (!renderer->initialize(1200, 800, "PDS-T1000 Factory Vehicle Simulation")) {
+        std::cerr << "Failed to initialize renderer window" << std::endl;
+        return false;
+    }
+    std::cout << "Renderer window initialized successfully!" << std::endl;
 
     // Load factory image
     if (!renderer->loadBackgroundImage(factoryImagePath)) {
         std::cerr << "Failed to load factory image: " << factoryImagePath << std::endl;
         return false;
     }
+    std::cout << "Factory image loaded successfully!" << std::endl;
 
     // Create factory path system with predefined nodes
+    std::cout << "Creating factory path system..." << std::endl;
     createFactoryPathSystem();
+    std::cout << "Factory path system created!" << std::endl;
 
     std::cout << "Created factory path system with " << pathSystem.getNodeCount() 
               << " nodes and " << pathSystem.getSegmentCount() << " segments" << std::endl;
@@ -41,6 +51,10 @@ bool Simulation::initialize(const char* factoryImagePath) {
 
     isInitialized = true;
     isRunning = true;
+
+    // Automatically apply fit to view after initialization
+    renderer->fitToView();
+    std::cout << "Applied automatic fit to view!" << std::endl;
 
     std::cout << "Simulation initialized successfully!" << std::endl;
     std::cout << "Detected " << pathSystem.getNodeCount() << " nodes and " 
@@ -65,7 +79,7 @@ void Simulation::cleanup() {
 void Simulation::run() {
     if (!isInitialized) return;
 
-    while (isRunning && !renderer->shouldClose()) {
+    while (isRunning && !WindowShouldClose()) {
         float deltaTime = GetFrameTime();
 
         handleInput();
@@ -89,21 +103,16 @@ bool Simulation::update(float deltaTime) {
 }
 
 void Simulation::render() {
-    renderer->beginFrame();
-
-    // Render background image
-    renderer->renderBackground();
-
-    // Render path system
-    renderer->renderPathSystem(pathSystem);
-
-    // Render vehicles
-    renderer->renderVehicles(*vehicleController);
-
-    // Render debug information
-    renderer->renderDebugInfo(pathDetector, pathSystem);
-
-    renderer->endFrame();
+    // Use renderer's frame management for proper camera transformation
+    if (renderer) {
+        renderer->beginFrame();  // This applies camera transformation
+        
+        renderer->renderBackground();
+        renderer->renderPathSystem(pathSystem);
+        renderer->renderVehicles(*vehicleController);
+        
+        renderer->endFrame();  // This renders UI and ends the frame
+    }
 }
 
 void Simulation::spawnRandomVehicle() {
@@ -137,7 +146,24 @@ void Simulation::handleInput() {
 
     // Pause/resume
     if (IsKeyPressed(KEY_SPACE)) {
-        togglePause();
+        isPaused = !isPaused;
+        std::cout << "Simulation " << (isPaused ? "paused" : "resumed") << std::endl;
+    }
+
+    // Camera controls
+    if (IsKeyPressed(KEY_F11)) {
+        renderer->toggleFullscreen();
+        std::cout << "F11 pressed - Toggle fullscreen" << std::endl;
+    }
+    
+    if (IsKeyPressed(KEY_R)) {
+        renderer->resetCamera();
+        std::cout << "R pressed - Camera reset" << std::endl;
+    }
+    
+    if (IsKeyPressed(KEY_F)) {
+        renderer->fitToView();
+        std::cout << "F pressed - Fit to view" << std::endl;
     }
 
     // Manual vehicle spawning
@@ -169,7 +195,7 @@ void Simulation::handleInput() {
     // Mausklick auf Knoten für Zielauswahl
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && selectedVehicle >= 0 && selectedVehicle < vehicleController->getVehicleCount()) {
         Vector2 mousePos = GetMousePosition();
-        Vector2 worldPos = renderer->screenToWorld(mousePos);
+        Point worldPos = Point(mousePos.x, mousePos.y);
 
         // Finde nächsten Knoten zum Mausklick (größerer Radius für bessere Auswahl)
         int nearestNodeId = pathSystem.findNearestNode(Point(worldPos.x, worldPos.y), 80.0f);

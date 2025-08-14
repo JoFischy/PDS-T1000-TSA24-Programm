@@ -7,17 +7,17 @@
 
 int Auto::nextId = 1;
 
-Auto::Auto() : valid(false), currentDirection(Direction::NORTH), speed(2.0f), id(0), 
-               currentSegmentId(-1), isMoving(false), isWaitingInQueue(false) {}
+Auto::Auto() : vehicleId(-1), state(VehicleState::IDLE), currentDirection(Direction::NORTH),
+               isMoving(false), currentNodeId(-1), targetNodeId(-1), 
+               currentSegmentIndex(0), speed(100.0f), progress(0.0f) {
+}
 
-Auto::Auto(const Point& startPos, Direction dir) 
-    : position(startPos), targetPosition(startPos), currentDirection(dir), 
-      speed(2.0f), valid(true), id(nextId++), currentSegmentId(-1), 
-      isMoving(false), isWaitingInQueue(false) {}
-
-Auto::Auto(int id, const Point& startPos) 
-    : vehicleId(id), position(startPos), currentNodeId(-1), targetNodeId(-1), pendingTargetNodeId(-1),
-      currentSegmentIndex(0), speed(50.0f), state(VehicleState::IDLE) {}
+Auto::Auto(int id, const Point& startPos) : vehicleId(id), position(startPos),
+                                           targetPosition(startPos), state(VehicleState::IDLE),
+                                           currentDirection(Direction::NORTH), isMoving(false),
+                                           currentNodeId(-1), targetNodeId(-1),
+                                           currentSegmentIndex(0), speed(100.0f), progress(0.0f) {
+}
 
 void Auto::setPosition(const Point& pos) {
     position = pos;
@@ -69,4 +69,16 @@ void Auto::calculateDirection() {
     } else {
         currentDirection = Direction::NORTH;
     }
+}
+
+bool Auto::isAtTarget() const {
+    return currentNodeId == targetNodeId || state == VehicleState::ARRIVED;
+}
+
+void Auto::reset() {
+    state = VehicleState::IDLE;
+    currentPath.clear();
+    currentSegmentIndex = 0;
+    progress = 0.0f;
+    targetNodeId = -1;
 }

@@ -6,7 +6,7 @@
 
 class Renderer {
 public:
-    Renderer();
+    Renderer(int width, int height);
     ~Renderer();
 
     // Initialization
@@ -31,6 +31,8 @@ public:
     void resetCamera();
     void zoomIn();
     void zoomOut();
+    void fitToView();  // Neue Methode: Passt die Ansicht an das gesamte Bild an
+    void toggleFullscreen();  // Neue Methode: Vollbildmodus umschalten
     Vector2 screenToWorld(Vector2 screenPos) const;
 
     // Settings

@@ -1,6 +1,5 @@
 #pragma once
 #include "point.h"
-#include "movement_system.h"
 #include <vector>
 
 enum class VehicleState {
@@ -10,45 +9,40 @@ enum class VehicleState {
     ARRIVED
 };
 
-class Auto {
-private:
-    static int nextId;
+enum class Direction {
+    NORTH,
+    EAST,
+    SOUTH,
+    WEST
+};
 
+class Auto {
 public:
-    // Original members from the cpp implementation
-    bool valid;
-    Direction currentDirection;
-    float speed;
-    int id;
-    int currentSegmentId;
-    bool isMoving;
-    bool isWaitingInQueue;
+    int vehicleId;
     Point position;
     Point targetPosition;
-
-    // New members from the previous struct version
     VehicleState state;
-    std::vector<int> currentPath;
-    int currentSegmentIndex;
+    Direction currentDirection;
+    bool isMoving;
+
     int currentNodeId;
     int targetNodeId;
-    int pendingTargetNodeId; // For two-stage routing
-    float size;
-    int vehicleId;
-    // Removed safety stop system
 
-    // Constructors
+    std::vector<int> currentPath;  // Pfad als Liste von Segment-IDs
+    int currentSegmentIndex;
+
+    float speed;
+    float progress; // Fortschritt auf aktuellem Segment (0.0 - 1.0)
+
+    static int nextId;
+
     Auto();
-    Auto(const Point& startPos, Direction dir);
-    Auto(int vehicleId, const Point& startPos); // Constructor for vehicle controller
+    Auto(int id, const Point& startPos);
 
-    // Methods expected by the cpp implementation
     void setPosition(const Point& pos);
     void setTargetPosition(const Point& target);
     void updatePosition(float deltaTime);
     void calculateDirection();
-
-    // Getter methods for compatibility
-    int getId() const { return id; }
-    bool isValid() const { return valid; }
+    bool isAtTarget() const;
+    void reset();
 };
