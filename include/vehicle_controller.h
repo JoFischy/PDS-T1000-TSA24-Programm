@@ -38,6 +38,8 @@ private:
     void handleIdleVehicle(Auto& vehicle);
     void handleMovingVehicle(Auto& vehicle, float deltaTime);
     void handleWaitingVehicle(Auto& vehicle);
+    std::vector<int> getNextSectionFromWaitingNode(int waitingNodeId, const std::vector<int>& path);
+    int generateRandomTarget(int vehicleId);
     
     PathSystem* pathSystem;
     SegmentManager* segmentManager;

@@ -12,13 +12,6 @@ Auto::Auto() : vehicleId(-1), state(VehicleState::IDLE), currentDirection(Direct
                currentSegmentIndex(0), speed(100.0f), progress(0.0f) {
 }
 
-Auto::Auto(int id, const Point& startPos) : vehicleId(id), position(startPos),
-                                           targetPosition(startPos), state(VehicleState::IDLE),
-                                           currentDirection(Direction::NORTH), isMoving(false),
-                                           currentNodeId(-1), targetNodeId(-1),
-                                           currentSegmentIndex(0), speed(100.0f), progress(0.0f) {
-}
-
 void Auto::setPosition(const Point& pos) {
     position = pos;
 }

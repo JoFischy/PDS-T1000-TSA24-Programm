@@ -1,16 +1,21 @@
 #include "renderer.h"
+#include "path_system.h"
+#include "vehicle_controller.h"
+#include "path_detector.h"
 #include <string>
 #include <sstream>
 #include <iostream>
 #include <vector>
+#include <set>
+#include <cmath>
 
 Renderer::Renderer(int width, int height) 
     : hasBackgroundImage(false), showNodes(true), showSegments(true), 
       showIntersections(true), showVehicleIds(false), showDebugInfo(false),
+      showVehicleRoutes(true), showSections(true), // Added showSections initialization
       windowWidth(width), windowHeight(height), isInitialized(false),
       coordinatePickerEnabled(false), pickerPosition(100, 100), 
-      isDraggingPicker(false), pickerRadius(15.0f),
-      offset({0, 0}), scale(1.0f) {
+      isDraggingPicker(false), pickerRadius(15.0f) {
 
     camera.target = {0, 0};
     camera.offset = {0, 0};
@@ -25,7 +30,7 @@ Renderer::~Renderer() {
 bool Renderer::initialize(int windowWidth, int windowHeight, const char* title) {
     // Ermittle Monitor-Auflösung vor der Fenster-Erstellung
     InitWindow(windowWidth, windowHeight, title);
-    
+
     // Sofortiger Wechsel zu Vollbild nach Fenster-Erstellung
     ToggleFullscreen();
     SetTargetFPS(60);
@@ -33,7 +38,7 @@ bool Renderer::initialize(int windowWidth, int windowHeight, const char* title) 
     // Nach Vollbild-Wechsel: Hole tatsächliche Bildschirm-Dimensionen
     int screenWidth = GetScreenWidth();
     int screenHeight = GetScreenHeight();
-    
+
     // Aktualisiere interne Dimensionen
     this->windowWidth = screenWidth;
     this->windowHeight = screenHeight;
@@ -120,9 +125,11 @@ void Renderer::renderVehicles(const VehicleController& vehicleController) {
     const PathSystem* pathSystem = vehicleController.getPathSystem();
     if (!pathSystem) return;
 
-    // First render all routes
-    for (const auto& vehicle : vehicleController.getVehicles()) {
-        renderVehicleRoute(vehicle, vehicleController, *pathSystem);
+    // First render all routes (if enabled)
+    if (showVehicleRoutes) {
+        for (const auto& vehicle : vehicleController.getVehicles()) {
+            renderVehicleRoute(vehicle, vehicleController, *pathSystem);
+        }
     }
 
     // Then render all vehicles on top
@@ -207,6 +214,10 @@ void Renderer::renderUI() {
     DrawText("4 - Vehicle IDs", 15, yOffset, 12, UI_TEXT_COLOR);
     yOffset += 15;
     DrawText("5 - Debug info", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("6 - Vehicle routes", 15, yOffset, 12, UI_TEXT_COLOR);
+    yOffset += 15;
+    DrawText("7 - Sections", 15, yOffset, 12, UI_TEXT_COLOR); // Added Section toggle text
     yOffset += 20;
 
     DrawText("Node Types:", 15, yOffset, 14, YELLOW);
@@ -268,7 +279,7 @@ void Renderer::updateCamera() {
     if (IsKeyDown(KEY_S)) { camera.target.y += moveSpeed * GetFrameTime(); moved = true; }
     if (IsKeyDown(KEY_A)) { camera.target.x -= moveSpeed * GetFrameTime(); moved = true; }
     if (IsKeyDown(KEY_D)) { camera.target.x += moveSpeed * GetFrameTime(); moved = true; }
-    
+
     static float debugTimer = 0;
     debugTimer += GetFrameTime();
     if (moved && debugTimer > 0.5f) { // Häufigere Debug-Ausgabe
@@ -295,6 +306,8 @@ void Renderer::updateCamera() {
     if (IsKeyPressed(KEY_THREE)) showIntersections = !showIntersections;
     if (IsKeyPressed(KEY_FOUR)) showVehicleIds = !showVehicleIds;
     if (IsKeyPressed(KEY_FIVE)) showDebugInfo = !showDebugInfo;
+    if (IsKeyPressed(KEY_SIX)) showVehicleRoutes = !showVehicleRoutes;
+    if (IsKeyPressed(KEY_SEVEN)) showSections = !showSections; // Added Section toggle key
 }
 
 void Renderer::zoomIn() {
@@ -322,14 +335,14 @@ void Renderer::fitToView() {
         // Verwende aktuelle Bildschirmauflösung
         int currentScreenWidth = GetScreenWidth();
         int currentScreenHeight = GetScreenHeight();
-        
+
         float zoomX = (float)currentScreenWidth / backgroundTexture.width;
         float zoomY = (float)currentScreenHeight / backgroundTexture.height;
         camera.zoom = (zoomX < zoomY) ? zoomX : zoomY;
-        
+
         // Zentriere das Bild
         camera.target = {backgroundTexture.width / 2.0f, backgroundTexture.height / 2.0f};
-        
+
         std::cout << "Fit to view: screen=" << currentScreenWidth << "x" << currentScreenHeight 
                   << ", zoom=" << camera.zoom << ", target=(" 
                   << camera.target.x << "," << camera.target.y << ")" << std::endl;
@@ -348,7 +361,7 @@ void Renderer::toggleFullscreen() {
         int monitor = GetCurrentMonitor();
         int monitorWidth = GetMonitorWidth(monitor);
         int monitorHeight = GetMonitorHeight(monitor);
-        
+
         ToggleFullscreen();
         camera.offset = {monitorWidth / 2.0f, monitorHeight / 2.0f};
         std::cout << "Entered fullscreen mode (" << monitorWidth << "x" << monitorHeight << ")" << std::endl;
@@ -627,8 +640,8 @@ void Renderer::drawPathNetwork(const PathSystem& pathSystem) {
         const PathNode* endNode = pathSystem.getNode(segment.endNodeId);
 
         if (startNode && endNode) {
-            Vector2 start = {startNode->position.x + offset.x, startNode->position.y + offset.y};
-            Vector2 end = {endNode->position.x + offset.x, endNode->position.y + offset.y};
+            Vector2 start = {startNode->position.x, startNode->position.y};
+            Vector2 end = {endNode->position.x, endNode->position.y};
 
             Color segmentColor = segment.isOccupied ? RED : DARKGRAY;
             DrawLineV(start, end, segmentColor);
@@ -637,8 +650,8 @@ void Renderer::drawPathNetwork(const PathSystem& pathSystem) {
 
     // Draw nodes
     for (const auto& node : pathSystem.getNodes()) {
-        Vector2 nodePos = {node.position.x + offset.x, node.position.y + offset.y};
-        DrawCircle((int)nodePos.x, (int)nodePos.y, (int)(8.0f * scale), BLUE);
+        Vector2 nodePos = {node.position.x, node.position.y};
+        DrawCircle((int)nodePos.x, (int)nodePos.y, 8, BLUE);
         DrawText(std::to_string(node.nodeId).c_str(), 
                 nodePos.x - 5, nodePos.y - 5, 12, WHITE);
     }
@@ -662,8 +675,8 @@ void Renderer::drawVehicleRoutes(const VehicleController& vehicleController, con
             const PathNode* endNode = pathSystem.getNode(segment->endNodeId);
 
             if (startNode && endNode) {
-                Vector2 start = {startNode->position.x + offset.x, startNode->position.y + offset.y};
-                Vector2 end = {endNode->position.x + offset.x, endNode->position.y + offset.y};
+                Vector2 start = {startNode->position.x, startNode->position.y};
+                Vector2 end = {endNode->position.x, endNode->position.y};
 
                 // Highlight current segment
                 float thickness = (i == vehicle.currentSegmentIndex) ? 6.0f : 4.0f;
@@ -675,12 +688,19 @@ void Renderer::drawVehicleRoutes(const VehicleController& vehicleController, con
         if (vehicle.targetNodeId != -1) {
             const PathNode* targetNode = pathSystem.getNode(vehicle.targetNodeId);
             if (targetNode) {
-                Vector2 targetPos = {targetNode->position.x + offset.x, targetNode->position.y + offset.y};
-                DrawCircle((int)targetPos.x, (int)targetPos.y, (int)(12.0f * scale), routeColor);
-                DrawCircleLines((int)targetPos.x, (int)targetPos.y, (int)(12.0f * scale), BLACK);
+                Vector2 targetPos = {targetNode->position.x, targetNode->position.y};
+                DrawCircle((int)targetPos.x, (int)targetPos.y, 12, routeColor);
+                DrawCircleLines((int)targetPos.x, (int)targetPos.y, 12, BLACK);
             }
         }
     }
+}
+
+// New function to draw sections
+void Renderer::drawSections() {
+    // This method is currently not implemented
+    // It would need a VehicleController parameter to function properly
+    return;
 }
 
 // Static color definitions - placed at end to avoid compilation issues

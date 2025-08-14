@@ -41,12 +41,14 @@ public:
     void setShowIntersections(bool show) { showIntersections = show; }
     void setShowVehicleIds(bool show) { showVehicleIds = show; }
     void setShowDebugInfo(bool show) { showDebugInfo = show; }
+    void setShowVehicleRoutes(bool show) { showVehicleRoutes = show; }
 
     bool getShowNodes() const { return showNodes; }
     bool getShowSegments() const { return showSegments; }
     bool getShowIntersections() const { return showIntersections; }
     bool getShowVehicleIds() const { return showVehicleIds; }
     bool getShowDebugInfo() const { return showDebugInfo; }
+    bool getShowVehicleRoutes() const { return showVehicleRoutes; }
 
     // Coordinate picker
     void enableCoordinatePicker(bool enable) { coordinatePickerEnabled = enable; }
@@ -68,13 +70,9 @@ private:
     void updateCoordinatePicker();
     void drawPathNetwork(const PathSystem& pathSystem);
     void drawVehicleRoutes(const VehicleController& vehicleController, const PathSystem& pathSystem);
+    void drawSections();
 
-    // Graphics resources
-    Texture2D backgroundTexture;
-    Camera2D camera;
-    bool hasBackgroundImage;
-    Vector2 offset;
-    float scale;
+    void drawCoordinatePicker();
 
     // Rendering settings
     bool showNodes;
@@ -82,6 +80,13 @@ private:
     bool showIntersections;
     bool showVehicleIds;
     bool showDebugInfo;
+    bool showVehicleRoutes;
+    bool showSections; // Neue Variable für die Anzeige von Sections
+
+    // Camera and rendering
+    Camera2D camera;
+    bool hasBackgroundImage;
+    Texture2D backgroundTexture;
 
     // Coordinate picker
     bool coordinatePickerEnabled;
@@ -103,7 +108,7 @@ private:
     static const Color UI_BACKGROUND_COLOR;
     static const Color UI_TEXT_COLOR;
     static const Color PICKER_COLOR;
-    
+
     // Node type colors
     static const Color WAITING_NODE_COLOR;
     static const Color WAITING_NODE_BORDER_COLOR;
@@ -113,7 +118,7 @@ private:
     static const Color CROSSROAD_BORDER_COLOR;
     static const Color CURVE_NODE_COLOR;
     static const Color CURVE_NODE_BORDER_COLOR;
-    
+
     // Vehicle color system
     static const Color VEHICLE_COLORS[];
     static const Color WAITING_COLORS[];

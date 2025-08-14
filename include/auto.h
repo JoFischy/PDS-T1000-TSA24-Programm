@@ -34,10 +34,18 @@ public:
     float speed;
     float progress; // Fortschritt auf aktuellem Segment (0.0 - 1.0)
 
+    int waitingForSegment;  // Segment ID we're waiting for
+    bool isAtWaitingNode;   // True if currently at a waiting node
+
     static int nextId;
 
     Auto();
-    Auto(int id, const Point& startPos);
+    Auto(int id, const Point& startPos)
+        : vehicleId(id), position(startPos), targetPosition(startPos),
+          state(VehicleState::IDLE), currentDirection(Direction::NORTH),
+          isMoving(false), currentNodeId(-1), targetNodeId(-1),
+          currentSegmentIndex(0), speed(100.0f), progress(0.0f), 
+          waitingForSegment(-1), isAtWaitingNode(false) {}
 
     void setPosition(const Point& pos);
     void setTargetPosition(const Point& target);
