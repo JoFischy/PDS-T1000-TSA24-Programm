@@ -42,11 +42,14 @@ private:
     Texture2D backgroundTexture;
     
     Texture2D createColorTexture(int width, int height, Color color);
-    bool loadImageFromFile(const std::string& filename);
+    void loadImageToCurrentScenario(const std::string& filename);
+    void clearScenario(int scenarioNumber);
     void drawUI();
     void drawImageSelector();
     std::vector<ImageItem>& getCurrentScenario();
     void renderScenario(const std::vector<ImageItem>& scenario, float alpha = 1.0f);
+    void saveConfiguration(const std::string& filename);
+    void loadConfiguration(const std::string& filename);
     
 public:
     ImageManager();

@@ -1,0 +1,9 @@
+VISIBILITY 1 1 0 1
+SCENARIO 1 2
+assets/Gelbe_Sperrflaeche.png 300.00 400.00 0.75 90.00
+assets/Pfeil_rechts.png 600.00 500.00 1.20 180.00
+SCENARIO 2 1
+assets/Rote_Sperrflaeche.png 800.00 600.00 0.60 270.00
+SCENARIO 3 0
+SCENARIO 4 1
+assets/VorfahrtGew.png 1000.00 300.00 1.00 0.00

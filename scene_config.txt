@@ -1,0 +1,16 @@
+VISIBILITY 0 0 0 0
+SCENARIO 1 4
+assets/Haltelinie.png 1524.00 317.00 0.25 90.00
+assets/Haltelinie.png 1293.00 318.00 0.25 90.00
+assets/VorfahrtGew.png 1508.00 219.00 0.05 270.00
+assets/VorfahrtGew.png 1311.00 419.00 0.05 90.00
+SCENARIO 2 3
+assets/Pfeil_rechts.png 1373.00 390.00 0.35 90.00
+assets/Haltelinie.png 1526.00 318.00 0.25 90.00
+assets/VorfahrtGew.png 1510.00 220.00 0.05 270.00
+SCENARIO 3 3
+assets/Pfeil geradeaus.png 1406.00 314.00 0.35 180.00
+assets/Haltelinie.png 1409.00 389.00 0.25 0.00
+assets/VorfahrtGew.png 1522.00 412.00 0.05 0.00
+SCENARIO 4 1
+assets/Pfeil_rechts.png 1488.00 356.00 0.35 0.00
